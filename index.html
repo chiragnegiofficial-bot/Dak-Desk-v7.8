@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dak Desk V7.9.1</title>
+<title>Dak Desk V8.1.1</title>
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -81,6 +81,40 @@
   </div>
 </div>
 
+<div id="cashImportModal" class="modal-overlay">
+  <div class="modal-content" style="max-width: 760px;">
+    <h3 class="modal-title">Import Cashbook Entries</h3>
+    <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom: 16px;">Paste CSV/JSON rows or upload a file. Leave the date blank to use the currently selected cashbook date.</p>
+    <div class="form-row">
+      <div class="input-group">
+        <label>Import Date (Optional)</label>
+        <input type="date" id="cb-import-date">
+      </div>
+      <div class="input-group">
+        <label>Preset Pack</label>
+        <select id="cb-import-preset" onchange="applyCashImportPreset(this.value)">
+          <option value="">Choose a preset</option>
+          <option value="postal-services">Postal Services Pack</option>
+          <option value="insurance">Insurance Pack</option>
+        </select>
+      </div>
+    </div>
+    <div class="input-group" style="margin-bottom: 12px;">
+      <label>Paste Data</label>
+      <textarea id="cb-import-text" rows="10" placeholder="date,type,scheme,description,amount&#10;2026-07-01,receipt,Stamp Sales,Stamp sale,500&#10;2026-07-01,receipt,Article Booking,Parcel booking,1200"></textarea>
+    </div>
+    <div class="input-group" style="margin-bottom: 20px;">
+      <label>Upload File (.csv / .json)</label>
+      <input type="file" id="cb-import-file" accept=".csv,.json,text/csv,application/json">
+    </div>
+    <div class="modal-actions" style="flex-wrap: wrap;">
+      <button class="btn btn-outline" onclick="closeCashImportModal()">Cancel</button>
+      <button class="btn btn-outline" onclick="loadCashImportPreset()">Load Sample Preset</button>
+      <button class="btn btn-primary" onclick="importCashbookEntries()">Import Entries</button>
+    </div>
+  </div>
+</div>
+
 <div id="ledgerEditModal" class="modal-overlay no-print">
   <div class="modal-content" style="max-width: 680px;">
     <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; color: var(--text-main);"><div style="background: var(--bg-input); padding: 8px; border-radius: 8px;"><i data-lucide="edit-3" style="color: var(--blue);"></i></div>Edit Account Entry</h3>
@@ -88,59 +122,35 @@
     <div class="form-row"><div class="input-group"><label>Account Number</label><input type="text" id="ledgerModAcc" placeholder="12 Digits" maxlength="12" oninput="this.value = this.value.replace(/[^0-9]/g, '');"></div><div class="input-group"><label>CIF</label><input type="text" id="ledgerModCif" placeholder="9 Digits" maxlength="9" oninput="this.value = this.value.replace(/[^0-9]/g, '');"></div><div class="input-group"><label>Phone</label><input type="text" id="ledgerModPhone" placeholder="10 Digits" maxlength="10" oninput="this.value = this.value.replace(/[^0-9]/g, '');"></div></div>
     <div class="form-row"><div class="input-group"><label>Aadhaar</label><input type="text" id="ledgerModAadhaar" placeholder="12 Digits" maxlength="12" oninput="this.value = this.value.replace(/[^0-9]/g, '');"></div><div class="input-group"><label>PAN</label><input type="text" id="ledgerModPan" placeholder="10 Chars" maxlength="10" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');"></div></div>
     <div class="form-row"><div class="input-group" style="flex: 2;"><label>Customer Name</label><input type="text" id="ledgerModName"></div><div class="input-group"><label>Deposit Amount (₹)</label><input type="number" id="ledgerModAmount"></div></div>
+    <div class="form-row"><div class="input-group" style="flex: 1;"><label>Father / Husband / Mother Name</label><input type="text" id="ledgerModRelationName" placeholder="Optional"></div></div>
     <div class="form-row" style="margin-bottom: 0;"><div class="input-group" style="flex: 2;"><label>Remarks / Nominee</label><input type="text" id="ledgerModRemarks" placeholder="Optional"></div><div class="input-group" style="flex: 1;"><label>Passbook Status</label><select id="ledgerModPbStatus" style="font-weight: 600;"><option value="N/A">N/A</option><option value="Pending AO">Pending AO</option><option value="At BO">At BO</option><option value="Delivered">Delivered</option></select></div></div>
     <div style="display: flex; justify-content: flex-end; gap: 16px; margin-top: 24px;"><button class="btn btn-outline" onclick="closeLedgerEditModal()">Cancel</button><button class="btn btn-primary" onclick="saveEditedLedgerEntry()">Save Changes</button></div>
   </div>
 </div>
 
-<div id="ledgerBulkEditModal" class="modal-overlay no-print">
-  <div class="modal-content" style="max-width: 680px;">
-    <h3 class="modal-title">Bulk Edit Selected Accounts</h3>
-    <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom:20px;">Only fields changed below will be applied to <strong id="bulk-edit-count">0</strong> selected accounts.</p>
-    <div class="form-row">
-      <div class="input-group"><label>Date</label><input type="date" id="bulk-edit-date"></div>
-      <div class="input-group"><label>Scheme</label><select id="bulk-edit-scheme"><option value="">No change</option></select></div>
-      <div class="input-group"><label>Passbook Status</label><select id="bulk-edit-status"><option value="">No change</option><option value="N/A">N/A</option><option value="Pending AO">Pending AO</option><option value="At BO">At BO</option><option value="Delivered">Delivered</option></select></div>
+<div id="boCustomerDetailsModal" class="modal-overlay no-print">
+  <div class="modal-content" style="max-width: 640px;">
+    <h3 class="modal-title" style="margin-bottom: 8px;">Complete Customer Details</h3>
+    <p style="font-size:0.875rem; color:var(--text-muted); margin-bottom: 20px;">Please add at least one customer identifier before marking this account as <strong>At BO</strong>.</p>
+    <div class="form-row" style="margin-bottom: 0;">
+      <div class="input-group"><label>Account Number</label><input type="text" id="boDetailAcc" placeholder="12 digits" oninput="checkBoCustomerDetailsModal()"></div>
+      <div class="input-group"><label>Phone</label><input type="text" id="boDetailPhone" placeholder="10 digits" oninput="checkBoCustomerDetailsModal()"></div>
     </div>
-    <div class="form-row" style="margin-bottom:0;">
-      <div class="input-group" style="flex:2;"><label>Remarks Text</label><input type="text" id="bulk-edit-remarks" placeholder="Leave empty for no change"></div>
-      <div class="input-group"><label>Remarks Action</label><select id="bulk-edit-remarks-mode"><option value="append">Append</option><option value="replace">Replace</option></select></div>
+    <div class="form-row" style="margin-bottom: 0;">
+      <div class="input-group"><label>CIF</label><input type="text" id="boDetailCif" placeholder="9 digits" oninput="checkBoCustomerDetailsModal()"></div>
+      <div class="input-group"><label>Aadhaar</label><input type="text" id="boDetailAadhaar" placeholder="12 digits" oninput="checkBoCustomerDetailsModal()"></div>
     </div>
-    <div class="modal-actions"><button class="btn btn-outline" onclick="closeBulkEditModal()">Cancel</button><button class="btn btn-primary" onclick="applyBulkLedgerEdit()">Apply Changes</button></div>
+    <div class="form-row" style="margin-bottom: 20px;">
+      <div class="input-group"><label>PAN</label><input type="text" id="boDetailPan" placeholder="10 chars" oninput="checkBoCustomerDetailsModal()"></div>
+      <div class="input-group"><label>Customer Name</label><input type="text" id="boDetailName" placeholder="Optional" oninput="checkBoCustomerDetailsModal()"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeBoCustomerDetailsModal()">Cancel</button>
+      <button class="btn btn-primary" id="boDetailSaveBtn" onclick="saveBoCustomerDetailsModal()" disabled>Save & Mark At BO</button>
+    </div>
   </div>
 </div>
 
-<div id="crmCampaignModal" class="modal-overlay no-print">
-  <div class="modal-content" style="max-width: 720px;">
-    <div class="crm-modal-heading">
-      <div><h3 class="modal-title" style="margin-bottom:4px;">Customer Connect CRM</h3><p>Prepare one message for the selected customer audience.</p></div>
-      <button class="btn btn-icon" type="button" onclick="closeCrmCampaign()" title="Close"><i data-lucide="x"></i></button>
-    </div>
-    <div class="crm-audience-card">
-      <div><strong id="crm-selected-count">0 customers</strong><span id="crm-phone-count">0 phone numbers available</span></div>
-      <div id="crm-audience-preview" class="crm-audience-preview"></div>
-    </div>
-    <div class="input-group" style="margin-bottom:16px;">
-      <label>Message Template</label>
-      <select id="crm-template" onchange="applyCrmTemplate(this.value)">
-        <option value="general">General Customer Update</option>
-        <option value="passbook">Passbook Ready Notice</option>
-        <option value="holiday">Branch Closure Notice</option>
-        <option value="custom">Custom Message</option>
-      </select>
-    </div>
-    <div class="input-group">
-      <label>Group Message</label>
-      <textarea id="crm-message" rows="7" maxlength="1500" placeholder="Write your message here..."></textarea>
-      <small class="crm-helper">Use <strong>{branch}</strong> to insert the branch name. WhatsApp will ask you to choose a group or contact before anything is sent.</small>
-    </div>
-    <div class="modal-actions" style="flex-wrap:wrap;">
-      <button class="btn btn-outline" type="button" onclick="exportSelectedCrmContacts()"><i data-lucide="contact"></i> Export Contacts</button>
-      <button class="btn btn-outline" type="button" onclick="copyCrmMessage()"><i data-lucide="copy"></i> Copy Message</button>
-      <button class="btn btn-success" type="button" onclick="shareCrmToWhatsApp()"><i data-lucide="message-circle"></i> Choose WhatsApp Group</button>
-    </div>
-  </div>
-</div>
 
 <aside class="sidebar" id="app-sidebar">
   <div class="brand-header">
@@ -175,91 +185,134 @@
     
     <!-- DASHBOARD -->
     <div class="tab-panel active" id="tab-panel-dashboard">
-      <div class="dashboard-hero">
-        <div class="dashboard-hero-content">
-          <h2 style="font-size: 1.5rem; font-weight: 800; margin-bottom: 8px;">Welcome back to Dak Desk! 👋</h2>
-          <p style="opacity: 0.9; font-size: 0.875rem; margin-bottom: 12px;">Here is your branch summary for <strong id="dash-date-display">Today</strong>.</p>
+      <div class="omni-dashboard">
+        <section class="omni-footfall-card">
+          <div><div class="omni-eyebrow"><i data-lucide="activity"></i> Branch Operations Center</div><h2>Good day, <span id="dash-bpm-name">Branch Postmaster</span></h2><p><strong id="dash-date-display">Today</strong> · Live view of your counter, ledger and day-close work.</p></div>
+          <div class="omni-footfall-status"><div><span class="omni-dot" id="dash-status-indicator"></span><strong id="dash-status-text">Treasury Open</strong></div><small>Counter readiness</small></div>
+          <div class="omni-wave" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
           <div id="dash-closure-message" class="dashboard-closure-message" role="status"></div>
-        </div>
-        <div class="dashboard-hero-content" style="background: rgba(0,0,0,0.2); padding: 12px 24px; border-radius: var(--radius-md); backdrop-filter: blur(8px); text-align: center;">
-          <span style="display: block; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.8; margin-bottom: 4px;">Day Book Status</span>
-          <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1rem;">
-            <div id="dash-status-indicator" style="width: 10px; height: 10px; border-radius: 50%; background: #facc15; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6);"></div>
-            <span id="dash-status-text">Treasury Open</span>
-          </div>
-        </div>
-      </div>
+        </section>
 
-      <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
-        <button class="quick-action-btn" id="dash-cash-action" onclick="switchTab('cashbook'); setTimeout(()=>document.getElementById('cb-rec-amt').focus(), 100);">
-            <div class="quick-action-icon" style="background: #eff6ff; color: #3b82f6;"><i data-lucide="plus"></i></div>
-            <span style="font-weight: 600; font-size: 0.875rem;">Record Cash Receipt</span>
-        </button>
-        <button class="quick-action-btn" onclick="switchTab('register'); setTimeout(()=>document.getElementById('regIdValue').focus(), 100);">
-            <div class="quick-action-icon" style="background: #fdf4ff; color: #a855f7;"><i data-lucide="users"></i></div>
-            <span style="font-weight: 600; font-size: 0.875rem;">Register New Account</span>
-        </button>
-        <button class="quick-action-btn" onclick="switchTab('bill');">
-            <div class="quick-action-icon" style="background: #fffbeb; color: #eab308;"><i data-lucide="receipt"></i></div>
-            <span style="font-weight: 600; font-size: 0.875rem;">Prepare TD Incentive Bill</span>
-        </button>
-        <button class="quick-action-btn" onclick="switchTab('reports');">
-            <div class="quick-action-icon" style="background: #ecfdf5; color: #10b981;"><i data-lucide="bar-chart-3"></i></div>
-            <span style="font-weight: 600; font-size: 0.875rem;">View Analytics & Reports</span>
-        </button>
-      </div>
+        <section class="omni-bento-grid">
+          <article class="omni-card omni-command-card">
+            <div class="omni-card-heading"><div><i data-lucide="crosshair"></i><h3>Command Center</h3></div><span class="omni-live">Live</span></div>
+            <div class="omni-ring-wrap"><svg viewBox="0 0 120 120" aria-label="Day close progress"><circle cx="60" cy="60" r="50" class="omni-ring-track"></circle><circle id="dash-eod-ring" cx="60" cy="60" r="50" class="omni-ring-value"></circle></svg><div><strong id="dash-eod-pct">0%</strong><span>Day close</span></div></div>
+            <p class="omni-muted" id="dash-eod-note">Complete the day-close steps when ready.</p>
+            <div class="omni-action-list">
+              <button type="button" onclick="switchTab('register')"><span class="omni-action-icon amber"><i data-lucide="book-open"></i></span><span><strong id="dash-pending-passbooks">0 passbooks pending</strong><small>Open the scheme Kanban</small></span><i data-lucide="chevron-right"></i></button>
+              <button type="button" id="dash-cash-action" onclick="switchTab('cashbook'); setTimeout(()=>document.getElementById('cb-rec-amt').focus(), 100);"><span class="omni-action-icon red"><i data-lucide="wallet"></i></span><span><strong>Record a cash receipt</strong><small>Continue today’s cash book</small></span><i data-lucide="chevron-right"></i></button>
+            </div>
+          </article>
 
-      <div class="stats-grid">
-        <div class="stat-card" style="flex-direction: column; gap: 0;">
-          <i data-lucide="wallet" class="stat-bg-icon"></i>
-          <div class="stat-card-title">Current Cash Balance</div>
-          <div class="stat-card-value" id="dashCashBalance">₹0.00</div>
-          <div class="stat-card-sub" id="dash-cash-balance-note">Calculated from today's Cash Book</div>
-        </div>
-        <div class="stat-card" style="flex-direction: column; gap: 0;">
-          <i data-lucide="users" class="stat-bg-icon"></i>
-          <div class="stat-card-title">Accounts Opened</div>
-          <div class="stat-card-value" id="dashAccCount">0</div>
-          <div class="stat-card-sub">Total recorded in Ledger</div>
-        </div>
-      </div>
+          <article class="omni-card omni-growth-card">
+            <div class="omni-card-heading"><div><i data-lucide="sprout"></i><h3>Scheme Growth</h3></div><button type="button" class="omni-link" onclick="switchTab('register')">Kanban <i data-lucide="arrow-up-right"></i></button></div>
+            <p class="omni-muted">Your monthly portfolio across the schemes that matter most.</p>
+            <div id="dash-scheme-summary" class="omni-scheme-summary"></div>
+            <div class="omni-milestones"><div><span>🌸</span><p><small>SSA</small><strong id="dash-ssa-count">0 accounts</strong></p></div><div><span>🍃</span><p><small>RD</small><strong id="dash-rd-count">0 accounts</strong></p></div><div><span>🔵</span><p><small>TD</small><strong id="dash-td-count">0 accounts</strong></p></div></div>
+          </article>
 
-      <div class="split-layout">
-        <div class="card">
-          <div class="card-header"><h2 class="card-title"><i data-lucide="pie-chart"></i> Monthly Accounts Opened</h2></div>
-          <div style="height: 300px; position:relative;"><canvas id="chartSchemesMonthly"></canvas></div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h2 class="card-title"><i data-lucide="bar-chart-2"></i> Incentive Distribution</h2></div>
-          <div style="height: 300px; position:relative;"><canvas id="chartIncentive"></canvas></div>
-        </div>
+          <article class="omni-card omni-nudges-card">
+            <div class="omni-card-heading"><div><i data-lucide="sparkles"></i><h3>Today at a Glance</h3></div></div>
+            <p class="omni-muted">A focused snapshot of your branch activity.</p>
+            <div class="omni-nudge"><span>Accounts opened</span><strong id="dashAccCount">0</strong><small id="dash-month-accounts">0 this month</small></div>
+            <div class="omni-nudge"><span>Scheduled follow-ups</span><strong id="dashReminderCount">0</strong><small>Active reminders</small></div>
+            <button type="button" class="omni-nudge-cta" onclick="switchTab('reports')">View analytics <i data-lucide="arrow-right"></i></button>
+          </article>
+
+          <article class="omni-card omni-cash-card">
+            <i data-lucide="wallet"></i><span>Live Cash Balance</span><strong id="dashCashBalance">₹0.00</strong><div class="omni-cash-meter"><span></span></div><small id="dash-cash-balance-note">Calculated from today's Cash Book</small>
+          </article>
+          <article class="omni-card omni-chart-card"><div class="omni-card-heading"><div><i data-lucide="pie-chart"></i><h3>Monthly Accounts</h3></div></div><div class="omni-chart-wrap"><canvas id="chartSchemesMonthly"></canvas></div></article>
+          <article class="omni-card omni-chart-card"><div class="omni-card-heading"><div><i data-lucide="bar-chart-2"></i><h3>TD Incentive</h3></div><button type="button" class="omni-link" onclick="switchTab('bill')">Bill <i data-lucide="arrow-up-right"></i></button></div><div class="omni-chart-wrap"><canvas id="chartIncentive"></canvas></div></article>
+
+          <article class="omni-card omni-flow-card">
+            <div class="omni-card-heading"><div><i data-lucide="repeat"></i><h3>Today Cash Flow</h3></div><span class="omni-live">Live</span></div>
+            <div class="omni-flow-grid">
+              <div><span>Receipts</span><strong id="dash-today-rec">₹0.00</strong></div>
+              <div><span>Payments</span><strong id="dash-today-pay">₹0.00</strong></div>
+            </div>
+            <div class="omni-flow-net"><span>Net Movement</span><strong id="dash-today-net">₹0.00</strong></div>
+          </article>
+
+          <article class="omni-card omni-kpi-card">
+            <div class="omni-card-heading"><div><i data-lucide="coins"></i><h3>Monthly Value</h3></div></div>
+            <p class="omni-muted">Deposit strength and TD incentive for this month.</p>
+            <div class="omni-kpi-row"><span>Total Deposits</span><strong id="dash-month-deposits">₹0.00</strong></div>
+            <div class="omni-kpi-row"><span>TD Incentive (Current Bill)</span><strong id="dash-td-total-inc">₹0.00</strong></div>
+          </article>
+
+          <article class="omni-card omni-backup-card">
+            <div class="omni-card-heading"><div><i data-lucide="shield-check"></i><h3>Backup Health</h3></div><button type="button" class="omni-link" onclick="switchTab('settings')">Open settings <i data-lucide="arrow-up-right"></i></button></div>
+            <p class="omni-muted" id="dash-backup-note">No backup status yet.</p>
+            <div class="omni-backup-badge" id="dash-backup-age">No backup</div>
+          </article>
+        </section>
       </div>
     </div>
 
     <!-- DAILY CASH BOOK -->
     <div class="tab-panel" id="tab-panel-cashbook">
+      <section class="treasury-hero">
+        <div class="treasury-hero-copy">
+          <div class="treasury-chip"><i data-lucide="vault"></i> Treasury Workspace</div>
+          <h2>Treasury control, made faster and clearer</h2>
+          <p>Record receipts and payments, monitor your closing position, and close the day with fewer clicks and less clutter.</p>
+        </div>
+        <div class="treasury-hero-grid">
+          <div class="treasury-metric">
+            <span>Opening Balance</span>
+            <strong id="treasury-hero-open">₹0</strong>
+            <small>Today's opening cash</small>
+          </div>
+          <div class="treasury-metric">
+            <span>Closing Balance</span>
+            <strong id="treasury-hero-close">₹0</strong>
+            <small>Running treasury total</small>
+          </div>
+          <div class="treasury-metric">
+            <span>Physical Cash</span>
+            <strong id="treasury-hero-physical">₹0</strong>
+            <small>Locked tally value</small>
+          </div>
+          <div class="treasury-metric">
+            <span>Status</span>
+            <strong id="treasury-hero-status">Open</strong>
+            <small id="treasury-hero-note">Ready for entry</small>
+          </div>
+        </div>
+      </section>
+
+      <div id="treasury-day-banner" class="treasury-day-banner" hidden></div>
+
       <div class="card">
         <div class="card-header">
-          <h2 class="card-title"><i data-lucide="book-open"></i> Cash Book & BODA</h2>
-          <div class="no-print" style="display:flex; gap:8px;">
-            <button class="btn btn-outline" onclick="openOverrideModal()">Manual Balance</button>
-            <button class="btn btn-outline" onclick="printBoda()"><i data-lucide="printer"></i> Print BO Slip</button>
+          <h2 class="card-title"><i data-lucide="vault"></i> Treasury & BODA</h2>
+          <div id="cb-status-badge" style="padding:8px 16px; border-radius:20px; font-weight:700; font-size:0.75rem; letter-spacing:0.05em; margin-bottom:4px; flex-shrink: 0; align-self: center;"></div>
+        </div>
+
+        <div class="treasury-action-row no-print">
+          <div class="input-group treasury-search">
+            <input type="text" id="cb-search" placeholder="Search treasury entries..." oninput="loadCashBookDate()">
           </div>
+          <button class="btn btn-outline" onclick="repeatLastCashEntry()"><i data-lucide="copy-plus"></i> Repeat Last</button>
+          <button class="btn btn-outline" onclick="openCashImportModal()"><i data-lucide="file-up"></i> Import Entries</button>
+          <button class="btn btn-outline" onclick="exportCashbookExcel()"><i data-lucide="sheet"></i> Export Excel</button>
+          <button class="btn btn-outline" onclick="openOverrideModal()">Manual Balance</button>
+          <button class="btn btn-outline" onclick="printBoda()"><i data-lucide="printer"></i> Print BO Slip</button>
         </div>
         
         <div class="form-row" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border);">
           <div class="input-group" style="flex: 0 1 200px;">
-            <label>Select Date</label>
+            <label>Treasury Date</label>
             <input type="date" id="cb-main-date" onchange="window.checkSunday(this.value); loadCashBookDate()">
           </div>
           <div class="input-group" style="flex: 1;">
             <label>BODA Remark (Optional)</label>
             <input type="text" id="cb-boda-remark" placeholder="Add a specific remark for today's BO slip..." onchange="saveBodaRemark()">
           </div>
-          <div id="cb-status-badge" style="padding:8px 16px; border-radius:20px; font-weight:700; font-size:0.75rem; letter-spacing:0.05em; margin-bottom:4px; flex-shrink: 0; align-self: center;"></div>
         </div>
 
-        <div class="stats-grid" style="margin-top: 24px;">
+        <div class="stats-grid treasury-stats" style="margin-top: 24px;">
           <div class="stat-card" style="padding: 16px; flex-direction: column; gap: 0;">
             <div class="stat-card-title">Opening Balance</div>
             <div class="stat-card-value" id="cb-op-bal" style="font-size: 1.5rem;">₹0</div>
@@ -278,15 +331,44 @@
           </div>
         </div>
 
+        <div class="card" style="margin-bottom: 24px; padding: 20px;">
+          <div class="card-header" style="margin-bottom: 16px;">
+            <h3 class="card-title" style="margin: 0;"><i data-lucide="shield-half"></i> Treasury Holdings</h3>
+            <span class="badge">Daily snapshot</span>
+          </div>
+          <div class="form-row" style="margin-bottom: 12px;">
+            <div class="input-group">
+              <label>Cash in Hand (₹)</label>
+              <input type="number" id="cb-treasury-cash" min="0" step="1" readonly title="Automatically synced from closing balance">
+            </div>
+            <div class="input-group">
+              <label>Postage Stamps (₹)</label>
+              <input type="number" id="cb-treasury-postage" min="0" step="1" oninput="updateTreasurySummary(); queueTreasurySave()">
+            </div>
+            <div class="input-group">
+              <label>Revenue Stamps (₹)</label>
+              <input type="number" id="cb-treasury-revenue" min="0" step="1" oninput="updateTreasurySummary(); queueTreasurySave()">
+            </div>
+            <div class="input-group">
+              <label>Postal Stationery (₹)</label>
+              <input type="number" id="cb-treasury-stationery" min="0" step="1" oninput="updateTreasurySummary(); queueTreasurySave()">
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border:1px dashed var(--border); border-radius:var(--radius-md); background:var(--bg-input);">
+            <span style="font-size:0.875rem; font-weight:600; color:var(--text-muted);">Combined Treasury Value</span>
+            <span id="cb-treasury-total" style="font-size:1.2rem; font-weight:800; color:var(--brand-red);">₹0</span>
+          </div>
+        </div>
+
         <div class="no-print" style="margin-bottom:24px; display:flex; gap:12px;">
-           <button class="btn btn-success" id="btn-save-cb" onclick="saveCashBookDate()"><i data-lucide="lock"></i> Save & Close Treasury</button>
+            <button class="btn btn-success" id="btn-save-cb" onclick="saveCashBookDate()"><i data-lucide="lock"></i> Lock Cash Book & Open Tally</button>
            <button class="btn btn-outline" id="btn-modify-cb" onclick="modifyCashBookDate()" style="display:none;"><i data-lucide="unlock"></i> Re-open Treasury</button>
         </div>
 
         <div class="split-layout no-print" id="cb-forms-container" style="margin-bottom: 24px;">
           <div class="card" style="margin:0; box-shadow:none; background: var(--bg-input); display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-                <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: var(--success);">+ Add Receipt (Credit)</h3>
+                <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: var(--success);">+ Add Treasury Receipt</h3>
                 <div class="form-row"><div class="input-group"><select id="cb-rec-scheme"></select></div><div class="input-group" style="flex:2"><input type="text" id="cb-rec-desc" placeholder="Details/Description... (Optional)"></div></div>
             </div>
             <div class="form-row" style="margin-bottom: 0;">
@@ -296,7 +378,7 @@
           </div>
           <div class="card" style="margin:0; box-shadow:none; background: var(--bg-input); display: flex; flex-direction: column; justify-content: space-between;">
             <div>
-                <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: var(--danger);">- Add Payment (Debit)</h3>
+                <h3 style="font-size: 1rem; font-weight: 600; margin-bottom: 16px; color: var(--danger);">- Add Treasury Payment</h3>
                 <div class="form-row"><div class="input-group"><select id="cb-pay-scheme"></select></div><div class="input-group" style="flex:2"><input type="text" id="cb-pay-desc" placeholder="Details/Description... (Optional)"></div></div>
             </div>
             <div class="form-row" style="margin-bottom: 0;">
@@ -324,6 +406,11 @@
                <div><span style="font-size:0.75rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; display:block;">Cash Book Closing Balance for <span id="tally-link-date" style="color:var(--brand-red);"></span></span><span id="tally-link-bal" style="font-size:1.5rem; color:var(--text-main); font-weight:800;">₹0</span></div>
                <div id="tally-link-status" style="font-size:0.75rem; font-weight:700; padding:6px 12px; border-radius:20px;">Checking status...</div>
             </div>
+            <div class="treasury-tally-toolbar no-print">
+              <button class="btn btn-outline" type="button" id="btn-add-treasury-entry" onclick="openTreasuryEntryEditor()"><i data-lucide="plus"></i> Add Another Entry</button>
+              <button class="btn btn-outline" type="button" onclick="focusCashDenominationGrid()"><i data-lucide="calculator"></i> View Denominations</button>
+            </div>
+            <div class="treasury-denomination-note">Count each denomination below, then lock the day-end cash book after the physical cash matches.</div>
             <div id="cash-inputs-grid" class="cash-grid"></div>
             <div style="background: var(--bg-card); border: 2px solid var(--brand-red); border-radius: var(--radius-lg); padding: 20px; display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; box-shadow: var(--shadow-md);">
                <div style="font-weight:700; font-size:1.125rem;">Total Physical Cash</div>
@@ -371,7 +458,7 @@
         
         <div class="form-row" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border); margin-bottom: 24px;">
           <div class="input-group"><label>Bill Month</label><input type="month" id="billMonth" onchange="updateHeaders()"></div>
-          <div class="input-group"><label>Name of BPM</label><input type="text" id="bpmName" oninput="updateHeaders()"></div>
+          <div class="input-group"><label>Branch Postmaster</label><input type="text" id="bpmName" oninput="updateHeaders()"></div>
           <div class="input-group"><label>SB A/c No.</label><input type="text" id="bpmAcc" oninput="updateHeaders()"></div>
           <div class="input-group"><label>Date of Bill</label><input type="date" id="billDate" onchange="window.checkSunday(this.value); updateHeaders()"></div>
           <div class="input-group"><label>SPO</label><input type="text" id="spoName" oninput="updateHeaders()"></div>
@@ -405,7 +492,7 @@
             <div class="date-right">Dated: <span id="out-billDate">__________</span></div>
             <table style="margin: 0 auto; text-align: left; font-size: 13px; border: none; width: auto; color: #000; border-collapse: collapse;">
               <tr><td style="padding: 2px 10px 2px 0; border: none !important;">Name of BO</td><td style="padding: 2px 0; border: none !important;">: <span id="out-boName">--</span><span id="out-spoNameWrapper"></span></td></tr>
-              <tr><td style="padding: 2px 10px 2px 0; border: none !important;">Name of BPM</td><td style="padding: 2px 0; border: none !important;">: <span id="out-bpmName">--</span></td></tr>
+              <tr><td style="padding: 2px 10px 2px 0; border: none !important;">Branch Postmaster</td><td style="padding: 2px 0; border: none !important;">: <span id="out-bpmName">--</span></td></tr>
               <tr><td style="padding: 2px 10px 2px 0; border: none !important;">SB A/c No.</td><td style="padding: 2px 0; border: none !important;">: <span id="out-bpmAcc">--</span></td></tr>
             </table>
           </div>
@@ -476,6 +563,13 @@
             </div>
           </div>
 
+          <div class="form-row" style="margin-bottom: 24px;">
+            <div class="input-group" style="flex: 1; min-width: 250px;">
+              <label>Father / Husband / Mother Name</label>
+              <input type="text" id="regRelationName" placeholder="Enter relation name" style="background: #fff;">
+            </div>
+          </div>
+
           <div class="form-row" style="margin-bottom: 0;">
             <div class="input-group" style="flex:1"><label>Remarks (Nominee / Extra details)</label><input type="text" id="regRemarks" placeholder="Optional details..." style="background: #fff;"></div>
             <button class="btn btn-primary" onclick="addRegEntry()" style="padding: 12px 24px; font-size: 0.95rem; height:42px;"><i data-lucide="plus"></i> Log Account</button>
@@ -492,29 +586,35 @@
                 <i data-lucide="search" style="width: 18px; height: 18px; color: var(--text-muted);"></i>
                 <input type="text" id="ledgerSearchInput" placeholder="Search accounts, PAN... (Ctrl+F)" style="border: none; background: transparent; padding: 8px 12px; flex: 1; outline: none; box-shadow: none;" oninput="renderRegTable()">
             </div>
+            <select id="ledgerMonthFilter" style="padding: 10px 16px; font-weight: 600; border-radius: 99px; background: var(--bg-input); border: 1px solid var(--border);" onchange="renderRegTable()"></select>
             <select id="ledgerStatusFilter" style="padding: 10px 16px; font-weight: 600; border-radius: 99px; background: var(--bg-input); border: 1px solid var(--border);" onchange="renderRegTable()"><option value="All">All Statuses</option><option value="Pending AO">Pending AO</option><option value="At BO">At BO</option><option value="Delivered">Delivered</option></select>
+            <div class="ledger-view-toggle" role="group" aria-label="Ledger view">
+              <button type="button" id="ledger-view-table" class="ledger-view-btn active" onclick="setLedgerView('table')" title="Table view"><i data-lucide="list"></i><span>Table</span></button>
+              <button type="button" id="ledger-view-board" class="ledger-view-btn" onclick="setLedgerView('board')" title="Passbook status board"><i data-lucide="columns-3"></i><span>Status</span></button>
+              <button type="button" id="ledger-view-scheme" class="ledger-view-btn" onclick="setLedgerView('scheme')" title="Scheme-wise Kanban"><i data-lucide="layout-grid"></i><span>Kanban</span></button>
+            </div>
             <div style="width: 1px; height: 24px; background: var(--border); margin: 0 4px;"></div>
+            <button class="btn btn-outline" onclick="downloadLedgerImportTemplate()" style="border-radius: 99px; height:42px;"><i data-lucide="file-down"></i> Excel Template</button>
+            <button class="btn btn-outline" onclick="document.getElementById('ledgerImportFile').click()" style="border-radius: 99px; height:42px;"><i data-lucide="file-up"></i> Import Excel</button>
+            <input type="file" id="ledgerImportFile" accept=".xlsx,.xls,.csv" onchange="importLedgerBulkFile(event)" style="display:none;">
             <button class="btn btn-outline" onclick="exportLedgerExcel()" style="border-radius: 99px; height:42px;"><i data-lucide="file-spreadsheet"></i> Export</button>
             <button class="btn btn-outline" onclick="printLedger()" style="border-radius: 99px; height:42px;"><i data-lucide="printer"></i> Print</button>
           </div>
         </div>
 
         <div class="ledger-bulk-toolbar no-print">
-          <div class="ledger-selection-summary"><strong id="ledger-selected-count">0 selected</strong><span>Select accounts below to use bulk actions.</span></div>
+          <div class="ledger-selection-summary"><strong id="ledger-selected-count">0 selected</strong><span>Select accounts below to manage them quickly.</span></div>
           <div class="ledger-bulk-actions">
-            <button class="btn btn-outline" id="bulk-edit-btn" onclick="openBulkEditModal()" disabled><i data-lucide="list-pen"></i> Bulk Edit</button>
-            <button class="btn btn-outline" id="bulk-receipt-btn" onclick="generateBulkReceipts()" disabled><i data-lucide="files"></i> Bulk Receipts</button>
-            <button class="btn btn-primary" id="crm-campaign-btn" onclick="openCrmCampaign()" disabled><i data-lucide="messages-square"></i> Customer Connect</button>
-            <button class="btn btn-outline" onclick="downloadLedgerImportTemplate()"><i data-lucide="download"></i> Import Template</button>
-            <input type="file" id="ledgerBulkFileInput" accept=".csv,.xlsx,.xls" class="hidden" onchange="importLedgerBulkFile(event)">
-            <button class="btn btn-success" onclick="document.getElementById('ledgerBulkFileInput').click()"><i data-lucide="upload"></i> Upload CSV/XLSX</button>
             <button class="btn btn-icon" id="clear-ledger-selection-btn" onclick="clearLedgerSelection()" disabled title="Clear selection"><i data-lucide="x"></i></button>
           </div>
         </div>
         
-        <div class="table-container">
+        <div id="passbook-board-view" class="passbook-board no-print" style="display:none;"></div>
+        <div id="scheme-board-view" class="passbook-board scheme-board no-print" style="display:none;"></div>
+
+        <div class="table-container" id="ledger-table-view">
           <table id="regTable">
-            <thead><tr><th class="no-print ledger-select-cell"><input type="checkbox" id="ledger-select-all" onchange="toggleSelectAllLedger(this.checked)" aria-label="Select all visible accounts"></th><th style="width: 60px;">Sr.</th><th style="width: 120px;">Date</th><th>Account IDs</th><th>Customer Details</th><th style="width: 80px;">PR</th><th>Scheme</th><th class="text-right">Deposit (₹)</th><th class="text-center" style="width: 160px;">Passbook Status</th><th class="text-right no-print" style="width: 160px;">Actions</th></tr></thead>
+            <thead><tr><th class="no-print ledger-select-cell"><input type="checkbox" id="ledger-select-all" onchange="toggleSelectAllLedger(this.checked)" aria-label="Select all visible accounts"></th><th style="width: 60px;">Sr.</th><th style="width: 120px;">Date</th><th style="width: 120px;">Financial Year</th><th>Account IDs</th><th>Customer Details</th><th style="width: 80px;">PR</th><th>Scheme</th><th class="text-right">Deposit (₹)</th><th class="text-center" style="width: 160px;">Passbook Status</th><th class="text-right no-print" style="width: 160px;">Actions</th></tr></thead>
             <tbody id="regBody"></tbody>
           </table>
         </div>
@@ -523,63 +623,131 @@
 
     <!-- POSB SCHEMES CALCULATOR -->
     <div class="tab-panel" id="tab-panel-rates">
-      <div class="card" style="background: linear-gradient(180deg, var(--bg-card) 0%, rgba(59, 130, 246, 0.03) 100%);">
-        <div class="card-header" style="border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px;">
-          <h2 class="card-title"><i data-lucide="calculator" class="text-blue-600"></i> POSB Savings Returns Calculator</h2>
-          <p style="font-size:0.875rem; color:var(--text-muted); font-weight:500;">Visualize savings growth with compound interest across India Post schemes.</p>
-        </div>
+      <div class="card posb-integrated-shell">
+        <div class="posb-integrated-wrap">
+          <div class="posb-integrated-left">
+            <div class="posb-integrated-heading">
+              <h2 class="card-title"><i data-lucide="calculator"></i> POSB Calculator</h2>
+              <p>Calculate interest for Post Office Savings Schemes.</p>
+            </div>
 
-        <div class="split-30-70">
-          <!-- Left: Controls -->
-          <div style="background: var(--bg-card); padding: 24px; border-radius: var(--radius-lg); border: 1px solid var(--border); box-shadow: var(--shadow-sm);">
-            <div id="posb-scheme-banner" style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px; margin-bottom: 20px; font-size: 0.875rem; color: #1e3a8a; display: flex; gap: 12px; align-items: flex-start;">
-              <i data-lucide="info" style="width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px;"></i>
-              <div>
-                <div><span id="posb-active-label" style="font-weight:700;">Custom</span>: <span id="posb-active-desc">Compounded Monthly</span></div>
-                <div id="posb-warn-lump" style="font-size: 0.75rem; color: #2563eb; opacity: 0.8; font-style: italic; display: none;">Lump sum disabled for this scheme.</div>
-                <div id="posb-warn-sip" style="font-size: 0.75rem; color: #2563eb; opacity: 0.8; font-style: italic; display: none;">Monthly deposits disabled for this scheme.</div>
+            <form id="calculatorForm" class="posb-integrated-form">
+              <div class="posb-field">
+                <label for="schemeType">Select Scheme</label>
+                <select id="schemeType" class="posb-select">
+                  <option value="sb">Savings Account (SB) - 4.0%</option>
+                  <option value="rd">Recurring Deposit (RD) - 6.7%</option>
+                  <option value="td1">Time Deposit (1 Year) - 6.9%</option>
+                  <option value="td2">Time Deposit (2 Year) - 7.0%</option>
+                  <option value="td3">Time Deposit (3 Year) - 7.1%</option>
+                  <option value="td5">Time Deposit (5 Year) - 7.5%</option>
+                  <option value="nsc">National Savings Certificate (NSC) - 7.7%</option>
+                  <option value="kvp">Kisan Vikas Patra (KVP) - 7.5%</option>
+                  <option value="ppf">Public Provident Fund (PPF) - 7.1%</option>
+                  <option value="ssa">Sukanya Samriddhi Account (SSA) - 8.2%</option>
+                  <option value="scss">Senior Citizen Savings Scheme (SCSS) - 8.2%</option>
+                </select>
               </div>
-            </div>
 
-            <div id="posb-wrap-init" style="margin-bottom: 20px; transition: opacity 0.3s;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;"><label style="font-size:0.875rem; font-weight:600; color:var(--text-muted);">Initial Deposit</label><div style="background:var(--bg-input); border-radius:6px; padding:4px 8px; display:flex; align-items:center; border:1px solid var(--border);"><span style="font-size:0.875rem; color:var(--text-muted); margin-right:4px;">₹</span><input type="number" id="posb-init" value="10000" style="background:transparent; border:none; padding:0; width:80px; text-align:right; font-weight:700; color:var(--text-main); font-size:1rem; box-shadow:none; height:auto;" oninput="updatePosbCalculator()"></div></div>
-              <input type="range" id="posb-init-slider" min="0" max="500000" step="5000" value="10000" oninput="document.getElementById('posb-init').value=this.value; updatePosbCalculator();">
-            </div>
+              <div class="posb-field">
+                <label id="principalLabel" for="principal">Principal Amount (₹)</label>
+                <div class="posb-input-with-prefix">
+                  <span>₹</span>
+                  <input type="number" id="principal" min="100" step="100" required value="10000">
+                </div>
+                <p id="principalHint">Minimum investment may apply based on scheme.</p>
+              </div>
 
-            <div id="posb-wrap-sip" style="margin-bottom: 20px; transition: opacity 0.3s;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;"><label style="font-size:0.875rem; font-weight:600; color:var(--text-muted);">Monthly SIP</label><div style="background:var(--bg-input); border-radius:6px; padding:4px 8px; display:flex; align-items:center; border:1px solid var(--border);"><span style="font-size:0.875rem; color:var(--text-muted); margin-right:4px;">₹</span><input type="number" id="posb-sip" value="2000" style="background:transparent; border:none; padding:0; width:80px; text-align:right; font-weight:700; color:var(--text-main); font-size:1rem; box-shadow:none; height:auto;" oninput="updatePosbCalculator()"></div></div>
-              <input type="range" id="posb-sip-slider" min="0" max="100000" step="500" value="2000" oninput="document.getElementById('posb-sip').value=this.value; updatePosbCalculator();">
-            </div>
+              <div class="posb-field">
+                <label id="durationLabel" for="duration">Time Period (Years)</label>
+                <input type="number" id="duration" min="1" step="1" required value="1">
+                <p id="durationHint">Duration is fixed for some schemes (like NSC/KVP).</p>
+              </div>
 
-            <div style="margin-bottom: 20px;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;"><label style="font-size:0.875rem; font-weight:600; color:var(--text-muted);">Interest Rate</label><div style="background:var(--bg-input); border-radius:6px; padding:4px 8px; display:flex; align-items:center; border:1px solid var(--border);"><input type="number" id="posb-rate" step="0.1" value="4.0" style="background:transparent; border:none; padding:0; width:50px; text-align:right; font-weight:700; color:var(--text-main); font-size:1rem; box-shadow:none; height:auto;" oninput="setPosbCustom(); updatePosbCalculator();"><span style="font-size:0.875rem; color:var(--text-muted); margin-left:4px;">%</span></div></div>
-              <input type="range" id="posb-rate-slider" min="1" max="15" step="0.1" value="4.0" oninput="document.getElementById('posb-rate').value=this.value; setPosbCustom(); updatePosbCalculator();">
-              <div id="posb-presets" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;"></div>
-            </div>
+              <div class="posb-field hidden" id="ssa-withdraw-wrap">
+                <label for="ssa-withdraw-amount">SSA Withdrawal in 18th Year (₹)</label>
+                <input type="number" id="ssa-withdraw-amount" min="0" step="100" value="0">
+                <p>Optional. As per norms, allowed up to 50% of 17th year closing balance.</p>
+              </div>
 
-            <div style="margin-bottom: 0;">
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;"><label style="font-size:0.875rem; font-weight:600; color:var(--text-muted);">Time Period</label><div style="background:var(--bg-input); border-radius:6px; padding:4px 8px; display:flex; align-items:center; border:1px solid var(--border);"><i data-lucide="calendar" style="width:14px; height:14px; color:var(--text-muted); margin-right:6px;"></i><input type="number" id="posb-years" value="10" min="1" max="50" style="background:transparent; border:none; padding:0; width:40px; text-align:right; font-weight:700; color:var(--text-main); font-size:1rem; box-shadow:none; height:auto;" oninput="updatePosbCalculator()"><span style="font-size:0.875rem; color:var(--text-muted); margin-left:4px;">Yrs</span></div></div>
-              <input type="range" id="posb-years-slider" min="1" max="30" step="1" value="10" oninput="document.getElementById('posb-years').value=this.value; updatePosbCalculator();">
-            </div>
+              <div class="posb-field hidden" id="ppf-frequency-wrap">
+                <label for="ppf-deposit-frequency">PPF Deposit Mode</label>
+                <select id="ppf-deposit-frequency" class="posb-select">
+                  <option value="yearly">Yearly Deposit</option>
+                  <option value="monthly">Monthly Deposit</option>
+                </select>
+                <p>PPF annual contribution should stay between ₹500 and ₹1,50,000.</p>
+              </div>
+
+              <div class="posb-action-row">
+                <button type="button" id="calculateBtn" class="btn btn-primary">Calculate Interest</button>
+                <button type="button" id="resetBtn" class="btn btn-outline">Reset</button>
+              </div>
+            </form>
           </div>
 
-          <!-- Right: Visuals -->
-          <div style="display: flex; flex-direction: column; gap: 20px;">
-            <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 16px;">
-              <div style="background:var(--bg-card); padding:16px; border-radius:var(--radius-lg); border:1px solid var(--border); box-shadow:var(--shadow-sm);"><div style="font-size:0.75rem; font-weight:600; color:var(--text-muted); display:flex; align-items:center; gap:6px; margin-bottom:8px;"><i data-lucide="piggy-bank" style="width:16px; height:16px;"></i> Total Invested</div><div id="posb-val-invested" style="font-size:1.5rem; font-weight:800; color:var(--text-main);">₹0</div></div>
-              <div style="background:#eff6ff; padding:16px; border-radius:var(--radius-lg); border:1px solid #bfdbfe; box-shadow:var(--shadow-sm);"><div style="font-size:0.75rem; font-weight:600; color:#2563eb; display:flex; align-items:center; gap:6px; margin-bottom:8px;"><i data-lucide="trending-up" style="width:16px; height:16px;"></i> Est. Returns</div><div id="posb-val-returns" style="font-size:1.5rem; font-weight:800; color:#1d4ed8;">+₹0</div></div>
-              <div style="background:#ecfdf5; padding:16px; border-radius:var(--radius-lg); border:1px solid #a7f3d0; box-shadow:var(--shadow-sm);"><div style="font-size:0.75rem; font-weight:600; color:#059669; display:flex; align-items:center; gap:6px; margin-bottom:8px;"><i data-lucide="landmark" style="width:16px; height:16px;"></i> Total Value</div><div id="posb-val-total" style="font-size:1.5rem; font-weight:800; color:#047857;">₹0</div></div>
+          <div class="posb-integrated-right">
+            <div id="emptyState" class="posb-empty-state">
+              <i data-lucide="calculator"></i>
+              <p>Enter values and click Calculate to see your returns.</p>
             </div>
 
-            <div style="background:var(--bg-card); padding:24px; border-radius:var(--radius-lg); border:1px solid var(--border); box-shadow:var(--shadow-sm); flex-grow: 1; display:flex; flex-direction:column;">
-              <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;"><h3 style="font-size:1rem; font-weight:700; color:var(--text-main); margin:0;">Wealth Projection</h3><button class="btn btn-success" style="padding:6px 12px; font-size:0.75rem; height:auto;" onclick="sharePosbWA()"><i data-lucide="message-circle" style="width:14px; height:14px;"></i> Share Estimate</button></div>
-              <div style="position:relative; height:220px; display:flex; align-items:flex-end; justify-content:space-between; gap:4px; margin-top:auto;" id="posb-chart-container"></div>
-              <div style="display:flex; justify-content:center; gap:24px; margin-top:32px; font-size:0.75rem; font-weight:600; color:var(--text-muted);"><div style="display:flex; align-items:center; gap:8px;"><div style="width:12px; height:12px; border-radius:3px; background:var(--blue);"></div> Amount Invested</div><div style="display:flex; align-items:center; gap:8px;"><div style="width:12px; height:12px; border-radius:3px; background:var(--success);"></div> Interest Earned</div></div>
+            <div id="resultsContainer" class="posb-results-container hidden">
+              <div>
+                <h3>Calculation Results</h3>
+                <div class="posb-result-cards">
+                  <div class="posb-result-card">
+                    <p>Total Investment</p>
+                    <strong id="resultPrincipal">₹0.00</strong>
+                  </div>
+                  <div class="posb-result-card">
+                    <p>Total Interest Earned</p>
+                    <strong id="resultInterest" class="text-success">₹0.00</strong>
+                  </div>
+                  <div class="posb-result-card posb-result-card-main">
+                    <p>Maturity Value</p>
+                    <strong id="resultMaturity">₹0.00</strong>
+                    <small id="resultNote"></small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="posb-progress-wrap">
+                <p>
+                  <span>Investment: <b id="chartInvestedPct">0%</b></span>
+                  <span>Interest: <b id="chartInterestPct">0%</b></span>
+                </p>
+                <div class="posb-progress-bar">
+                  <div id="chartInvestedBar" class="posb-progress-invested" style="width: 0%"></div>
+                  <div id="chartInterestBar" class="posb-progress-interest" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <div class="posb-wa-panel">
+                <label for="posb-wa-contact">WhatsApp Send To</label>
+                <select id="posb-wa-contact" class="posb-select">
+                  <option value="">Custom Number(s)</option>
+                </select>
+                <input type="text" id="posb-wa-number" placeholder="Enter 10-digit number or comma-separated numbers">
+                <button type="button" id="posb-wa-send" class="btn btn-success"><i data-lucide="message-circle"></i> Send WhatsApp Estimate</button>
+                <p>You can select a contact from ledger or enter one or more custom numbers.</p>
+              </div>
+
+              <div class="posb-compare-panel" id="posb-compare-panel">
+                <div class="posb-compare-head">
+                  <label>Scheme Compare</label>
+                </div>
+                <div class="posb-compare-actions">
+                  <select id="posb-compare-custom" class="posb-select"></select>
+                  <button type="button" id="posb-compare-run" class="btn btn-outline">Compare Selected</button>
+                </div>
+                <div id="posb-compare-output" class="posb-compare-output">Calculate first to view suggestions.</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      
+
       <!-- Offical Rates Table -->
       <div class="card">
         <div class="card-header"><h2 class="card-title"><i data-lucide="landmark"></i> Official Post Office Interest Rates</h2><button class="btn btn-outline no-print" onclick="printRates()"><i data-lucide="printer"></i> Print Rates</button></div>
@@ -611,63 +779,386 @@
 
     <!-- REPORTS & SUMMARY -->
     <div class="tab-panel" id="tab-panel-reports">
-      <div style="display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;">
-        <button class="quick-action-btn" onclick="showReportSection('analytics')"><div class="quick-action-icon" style="background: #eff6ff; color: #3b82f6;"><i data-lucide="bar-chart-2"></i></div><span style="font-weight: 600; font-size: 0.875rem;">Branch Analytics</span></button>
-        <button class="quick-action-btn" onclick="showReportSection('bosummary')"><div class="quick-action-icon" style="background: #fdf4ff; color: #a855f7;"><i data-lucide="book-open"></i></div><span style="font-weight: 600; font-size: 0.875rem;">BO Summary Reports</span></button>
-        <button class="quick-action-btn" onclick="showReportSection('accounts')"><div class="quick-action-icon" style="background: #ecfdf5; color: #10b981;"><i data-lucide="users"></i></div><span style="font-weight: 600; font-size: 0.875rem;">Account Summary Reports</span></button>
-      </div>
+      <div class="is-shell">
 
-      <div id="rep-section-analytics">
-        <div class="card">
-          <div class="card-header"><h2 class="card-title"><i data-lucide="bar-chart-3"></i> Branch Analytics</h2></div>
-          <div class="form-row no-print" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border); margin-bottom: 24px;">
-            <div class="input-group"><label>From Date</label><input type="date" id="rep-start"></div>
-            <div class="input-group"><label>To Date</label><input type="date" id="rep-end"></div>
-            <button class="btn btn-primary" onclick="generateReportCharts()"><i data-lucide="filter" style="width:16px;height:16px;"></i> Update Charts</button>
+        <!-- ── SECTION 1: Global Filter Bar ───────────────────────────────── -->
+        <div class="is-filter-bar card">
+          <div class="is-filter-bar-left">
+            <div class="is-filter-group">
+              <label>From</label>
+              <input type="date" id="is-from" onchange="runInsightsStudio()">
+            </div>
+            <div class="is-filter-group">
+              <label>To</label>
+              <input type="date" id="is-to" onchange="runInsightsStudio()">
+            </div>
+            <div class="is-filter-group">
+              <label>Compare With</label>
+              <select id="is-compare-mode" class="is-select" onchange="runInsightsStudio()">
+                <option value="prev_period">Previous Period</option>
+                <option value="prev_month">Previous Month</option>
+                <option value="prev_year">Previous Year</option>
+                <option value="none">No Comparison</option>
+              </select>
+            </div>
+            <div class="is-filter-group">
+              <label>Scheme</label>
+              <select id="is-scheme-filter" class="is-select" onchange="runInsightsStudio()">
+                <option value="All">All Schemes</option>
+                <option value="RD">RD</option>
+                <option value="1Y TD">1Y TD</option>
+                <option value="2Y TD">2Y TD</option>
+                <option value="3Y TD">3Y TD</option>
+                <option value="5Y TD">5Y TD</option>
+                <option value="MIS">MIS</option>
+                <option value="SCSS">SCSS</option>
+                <option value="PPF">PPF</option>
+                <option value="SSA">SSA</option>
+                <option value="NSC">NSC</option>
+                <option value="KVP">KVP</option>
+                <option value="SB">SB</option>
+                <option value="MSSC">MSSC</option>
+              </select>
+            </div>
           </div>
-          <div class="split-layout">
-            <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:16px;"><h3 style="font-size:1rem; font-weight:600; margin-bottom:12px; text-align:center;">Cash Flow</h3><div style="height: 250px; position:relative;"><canvas id="rep-chart-cashflow"></canvas></div></div>
-            <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:16px;"><h3 style="font-size:1rem; font-weight:600; margin-bottom:12px; text-align:center;">Scheme Distribution</h3><div style="height: 250px; position:relative;"><canvas id="rep-chart-schemes"></canvas></div></div>
+          <div class="is-filter-bar-right">
+            <button class="btn btn-primary" onclick="runInsightsStudio()"><i data-lucide="refresh-cw"></i> Refresh</button>
+            <button class="btn btn-outline" onclick="generateUnifiedMasterReport()"><i data-lucide="file-stack"></i> Export Report</button>
           </div>
         </div>
-      </div>
 
-      <div id="rep-section-bosummary" style="display:none;">
-        <div class="card p-4">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-            <h2 class="card-title m-0"><i data-lucide="book-open"></i> Monthly BO Account Summary</h2>
-            <div style="display:flex; gap:8px;"><button class="btn btn-success no-print" onclick="exportSummaryCSV()"><i data-lucide="sheet"></i> Download Excel (CSV)</button></div>
+        <!-- ── SECTION 2: Branch Performance KPI Strip ───────────────────── -->
+        <div class="is-kpi-strip card">
+          <div class="is-kpi-card" id="is-kpi-deposits">
+            <div class="is-kpi-label">Deposits</div>
+            <div class="is-kpi-value" id="is-v-deposits">₹0</div>
+            <div class="is-kpi-delta" id="is-d-deposits"></div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border);">
-              <div class="flex gap-3">
-                  <div class="flex-1" style="max-width: 250px;"><label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Select Month</label><input type="month" id="summary-month" class="input-field w-full mt-1" onchange="generateBOSummaryReport()"></div>
-                  <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateBOSummaryReport()"><i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Generate Summary</button></div>
-              </div>
+          <div class="is-kpi-divider"></div>
+          <div class="is-kpi-card" id="is-kpi-accounts">
+            <div class="is-kpi-label">Accounts</div>
+            <div class="is-kpi-value" id="is-v-accounts">0</div>
+            <div class="is-kpi-delta" id="is-d-accounts"></div>
           </div>
-          <div id="boSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="background: white;"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select month and click Generate Summary</div></div>
+          <div class="is-kpi-divider"></div>
+          <div class="is-kpi-card" id="is-kpi-incentive">
+            <div class="is-kpi-label">TD Incentive</div>
+            <div class="is-kpi-value" id="is-v-incentive">₹0</div>
+            <div class="is-kpi-delta" id="is-d-incentive"></div>
+          </div>
+          <div class="is-kpi-divider"></div>
+          <div class="is-kpi-card" id="is-kpi-avg">
+            <div class="is-kpi-label">Avg Deposit</div>
+            <div class="is-kpi-value" id="is-v-avg">₹0</div>
+            <div class="is-kpi-delta" id="is-d-avg"></div>
+          </div>
         </div>
-      </div>
 
-      <div id="rep-section-accounts" style="display:none;">
-        <div class="card p-4">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-            <h2 class="card-title m-0"><i data-lucide="users"></i> Account Summary Report</h2>
-            <div style="display:flex; gap:8px;"><button class="btn btn-outline" onclick="exportModulePDF('accSummaryWrap', 'Account_Summary_Report')"><i data-lucide="file-text"></i> Download PDF</button><button class="btn btn-success" onclick="exportExcelTable('accSummaryTable', 'Account_Summary_Report')"><i data-lucide="sheet"></i> Download Excel</button></div>
+        <!-- ── SECTION 3: Performance Trend ──────────────────────────────── -->
+        <div class="card is-section">
+          <div class="is-section-head">
+            <h3 class="is-section-title"><i data-lucide="trending-up"></i> Performance Trend</h3>
+            <div class="is-tab-group">
+              <button class="is-tab active" id="trend-tab-deposits" onclick="switchTrendTab('deposits')">Deposits</button>
+              <button class="is-tab" id="trend-tab-accounts" onclick="switchTrendTab('accounts')">Accounts</button>
+              <button class="is-tab" id="trend-tab-incentive" onclick="switchTrendTab('incentive')">TD Incentive</button>
+            </div>
           </div>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border);">
-              <div><label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Filter by Scheme</label><select id="accScheme" class="input-field w-full mt-1"><option value="All">All Schemes</option><option value="SB">SB</option><option value="RD">RD</option><option value="MIS">MIS</option><option value="SSA">SSA</option><option value="1Y TD">1Y TD</option><option value="2Y TD">2Y TD</option><option value="3Y TD">3Y TD</option><option value="5Y TD">5Y TD</option><option value="SCSS">SCSS</option><option value="PPF">PPF</option></select></div>
-              <div class="flex gap-3">
-                  <div class="flex-1"><label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">From Date</label><input type="date" id="accFromDate" class="input-field w-full mt-1"></div>
-                  <div class="flex-1"><label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">To Date</label><input type="date" id="accToDate" class="input-field w-full mt-1"></div>
-                  <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateAccountSummaryReport()"><i data-lucide="activity" style="width:16px;height:16px;"></i> Generate Insights</button></div>
-              </div>
+          <div style="height:260px; position:relative;"><canvas id="is-trend-chart"></canvas></div>
+        </div>
+
+        <!-- ── SECTION 4: Scheme Performance + Portfolio Mix ──────────────── -->
+        <div class="is-two-col">
+          <div class="card is-section">
+            <div class="is-section-head">
+              <h3 class="is-section-title"><i data-lucide="layout-grid"></i> Scheme Performance</h3>
+            </div>
+            <div class="table-container" style="max-height:320px;">
+              <table id="is-scheme-table">
+                <thead><tr><th>Scheme</th><th class="text-right">Accounts</th><th class="text-right">Deposits</th><th class="text-right">Avg Deposit</th><th class="text-right">Share</th><th class="text-center">Trend</th></tr></thead>
+                <tbody id="is-scheme-tbody"></tbody>
+              </table>
+            </div>
+            <button class="btn btn-outline is-drill-btn" id="is-scheme-drill-btn" style="display:none; margin-top:12px;" onclick="openSchemeDrillModal()"><i data-lucide="zoom-in"></i> View Detailed Analysis</button>
           </div>
-          <div id="accSummaryWrap" style="background: white; padding: 16px;">
-              <div id="accInsightsArea" style="margin-bottom: 24px; display: none;">
-                  <h3 style="font-size: 0.875rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">Comparative Performance (vs Previous Periods)</h3>
-                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;" id="accInsightsCards"></div>
+          <div class="card is-section">
+            <div class="is-section-head">
+              <h3 class="is-section-title"><i data-lucide="pie-chart"></i> Portfolio Mix</h3>
+            </div>
+            <div style="height:240px; position:relative;"><canvas id="is-portfolio-chart"></canvas></div>
+            <div id="is-portfolio-legend" class="is-donut-legend"></div>
+          </div>
+        </div>
+
+        <!-- ── SECTION 5: TD Incentive + Account Pipeline ─────────────────── -->
+        <div class="is-two-col">
+          <div class="card is-section">
+            <div class="is-section-head">
+              <h3 class="is-section-title"><i data-lucide="indian-rupee"></i> TD Incentive Performance</h3>
+            </div>
+            <div class="is-stat-grid" id="is-incentive-stats"></div>
+            <div style="height:180px; position:relative; margin-top:16px;"><canvas id="is-incentive-chart"></canvas></div>
+          </div>
+          <div class="card is-section">
+            <div class="is-section-head">
+              <h3 class="is-section-title"><i data-lucide="kanban"></i> Account Pipeline</h3>
+            </div>
+            <div class="is-pipeline-grid" id="is-pipeline-grid"></div>
+            <div class="is-pipeline-meta" id="is-pipeline-meta"></div>
+          </div>
+        </div>
+
+        <!-- ── SECTION 6: Operational Insights ───────────────────────────── -->
+        <div class="card is-section">
+          <div class="is-section-head">
+            <h3 class="is-section-title"><i data-lucide="zap"></i> Operational Insights</h3>
+          </div>
+          <div id="is-insights-list" class="is-insights-list"></div>
+        </div>
+
+        <!-- ── SECTION 7: Custom Report Builder ──────────────────────────── -->
+        <div class="card is-section">
+          <div class="is-section-head">
+            <h3 class="is-section-title"><i data-lucide="file-stack"></i> Custom Report Builder</h3>
+          </div>
+          <div class="is-report-builder">
+            <div class="is-report-builder-fields">
+              <div class="is-filter-group"><label>Report Type</label>
+                <select id="crb-type" class="is-select">
+                  <option value="monthly">Monthly Performance</option>
+                  <option value="scheme">Scheme Analysis</option>
+                  <option value="incentive">TD Incentive</option>
+                  <option value="pipeline">Account Pipeline</option>
+                  <option value="full">Full Branch Report</option>
+                </select>
               </div>
-              <div id="accSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="border:none;"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select filters and click Generate Insights</div></div>
+              <div class="is-filter-group"><label>From Date</label><input type="date" id="crb-from"></div>
+              <div class="is-filter-group"><label>To Date</label><input type="date" id="crb-to"></div>
+              <div class="is-filter-group"><label>Scheme</label>
+                <select id="crb-scheme" class="is-select">
+                  <option value="All">All Schemes</option>
+                  <option value="RD">RD</option><option value="1Y TD">1Y TD</option><option value="2Y TD">2Y TD</option>
+                  <option value="3Y TD">3Y TD</option><option value="5Y TD">5Y TD</option><option value="MIS">MIS</option>
+                  <option value="SCSS">SCSS</option><option value="PPF">PPF</option><option value="SSA">SSA</option>
+                  <option value="NSC">NSC</option><option value="KVP">KVP</option>
+                </select>
+              </div>
+            </div>
+            <div class="is-report-sections">
+              <label class="is-section-head" style="margin-bottom:8px; display:block;">Include Sections</label>
+              <div class="is-checkboxes">
+                <label><input type="checkbox" id="crb-s-perf" checked> Performance Summary</label>
+                <label><input type="checkbox" id="crb-s-scheme" checked> Scheme Analysis</label>
+                <label><input type="checkbox" id="crb-s-incentive" checked> TD Incentive</label>
+                <label><input type="checkbox" id="crb-s-pipeline" checked> Passbook Status</label>
+                <label><input type="checkbox" id="crb-s-acq" checked> Customer Acquisition</label>
+                <label><input type="checkbox" id="crb-s-charts" checked> Charts</label>
+                <label><input type="checkbox" id="crb-s-insights" checked> Operational Insights</label>
+              </div>
+            </div>
+            <div class="is-report-actions">
+              <button class="btn btn-outline" onclick="previewCustomReport()"><i data-lucide="eye"></i> Preview</button>
+              <button class="btn btn-primary" onclick="generateUnifiedMasterReport()"><i data-lucide="file-text"></i> Export PDF</button>
+              <button class="btn btn-success" onclick="exportSummaryCSV()"><i data-lucide="sheet"></i> Export Excel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Legacy sub-sections kept for BO Summary and Account Reports ──── -->
+        <div id="rep-section-analytics" style="display:none;"></div>
+
+        <div id="rep-section-bosummary" style="display:none;">
+          <div class="report-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+              <h2 class="card-title m-0"><i data-lucide="book-open"></i> Monthly BO Account Summary</h2>
+              <div style="display:flex; gap:8px;"><button class="btn btn-success no-print" onclick="exportSummaryCSV()"><i data-lucide="sheet"></i> Download Excel (CSV)</button></div>
+            </div>
+            <div class="report-toolbar">
+                <div class="flex gap-3" style="align-items:end; width:100%;">
+                    <div class="flex-1" style="max-width: 250px;"><label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Select Month</label><input type="month" id="summary-month" class="input-field w-full mt-1" onchange="generateBOSummaryReport()"></div>
+                    <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateBOSummaryReport()"><i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Generate Summary</button></div>
+                </div>
+            </div>
+            <div id="boSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="background: var(--bg-card);"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select month and click Generate Summary</div></div>
+          </div>
+        </div>
+
+        <div id="rep-section-accounts" style="display:none;">
+          <div class="report-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+              <h2 class="card-title m-0"><i data-lucide="users"></i> Account Summary Report</h2>
+              <div style="display:flex; gap:8px;"><button class="btn btn-outline" onclick="exportModulePDF('accSummaryWrap', 'Account_Summary_Report')"><i data-lucide="file-text"></i> Download PDF</button><button class="btn btn-success" onclick="exportExcelTable('accSummaryTable', 'Account_Summary_Report')"><i data-lucide="sheet"></i> Download Excel</button></div>
+            </div>
+            <div class="report-toolbar">
+                <div class="input-group" style="min-width: 220px;"><label>Filter by Scheme</label><select id="accScheme" class="input-field w-full mt-1"><option value="All">All Schemes</option><option value="SB">SB</option><option value="RD">RD</option><option value="MIS">MIS</option><option value="SSA">SSA</option><option value="1Y TD">1Y TD</option><option value="2Y TD">2Y TD</option><option value="3Y TD">3Y TD</option><option value="5Y TD">5Y TD</option><option value="SCSS">SCSS</option><option value="PPF">PPF</option></select></div>
+                <div class="input-group"><label>From Date</label><input type="date" id="accFromDate" class="input-field w-full mt-1"></div>
+                <div class="input-group"><label>To Date</label><input type="date" id="accToDate" class="input-field w-full mt-1"></div>
+                <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateAccountSummaryReport()"><i data-lucide="activity" style="width:16px;height:16px;"></i> Generate Insights</button></div>
+            </div>
+            <div id="accSummaryWrap" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                <div id="accInsightsArea" style="margin-bottom: 24px; display: none;">
+                    <h3 style="font-size: 0.875rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">Comparative Performance (vs Previous Periods)</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;" id="accInsightsCards"></div>
+                </div>
+                <div id="accSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="border:none;"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select filters and click Generate Insights</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scheme Drill-Down Modal ──────────────────────────────────────── -->
+        <div id="is-drill-modal" class="modal-overlay no-print" style="display:none;">
+          <div class="modal-content" style="max-width:680px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <h3 class="modal-title" id="is-drill-title" style="margin:0;"></h3>
+              <button class="btn btn-icon" onclick="closeSchemeDrillModal()"><i data-lucide="x"></i></button>
+            </div>
+            <div id="is-drill-body"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+          <div class="report-panel">
+            <div class="card-header" style="margin-bottom: 16px;"><h2 class="card-title"><i data-lucide="bar-chart-3"></i> Branch Analytics</h2></div>
+            <div class="report-toolbar no-print">
+              <div class="input-group"><label>From Date</label><input type="date" id="rep-start"></div>
+              <div class="input-group"><label>To Date</label><input type="date" id="rep-end"></div>
+              <button class="btn btn-primary" onclick="generateReportCharts()"><i data-lucide="filter" style="width:16px;height:16px;"></i> Update Charts</button>
+            </div>
+            <div class="report-toolbar no-print" style="margin-top:-8px;">
+              <button class="btn btn-primary" onclick="generateUnifiedMasterReport()"><i data-lucide="file-stack"></i> Unified Master Report PDF</button>
+              <button class="btn btn-outline" onclick="forwardMasterReportWhatsApp()"><i data-lucide="message-circle"></i> WhatsApp Forward</button>
+              <button class="btn btn-success" onclick="exportPivotReadyData()"><i data-lucide="sheet"></i> Pivot-Ready CSV</button>
+              <button class="btn btn-outline" onclick="openInspectorAuditView()"><i data-lucide="shield"></i> Inspector Audit View</button>
+            </div>
+            <div class="split-layout">
+              <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; background: linear-gradient(180deg, var(--bg-card), var(--bg-input));"><h3 style="font-size:1rem; font-weight:600; margin-bottom:12px; text-align:center;">Cash Flow</h3><div style="height: 250px; position:relative;"><canvas id="rep-chart-cashflow"></canvas></div></div>
+              <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:16px; background: linear-gradient(180deg, var(--bg-card), var(--bg-input));"><h3 style="font-size:1rem; font-weight:600; margin-bottom:12px; text-align:center;">Scheme Distribution</h3><div style="height: 250px; position:relative;"><canvas id="rep-chart-schemes"></canvas></div></div>
+            </div>
+
+            <div class="insight-grid" style="margin-top:16px;">
+              <div class="insight-card">
+                <h3><i data-lucide="file-text"></i> Performance Narrative</h3>
+                <p id="insight-narrative" class="insight-text">Select a date range and click Update Charts.</p>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="gauge"></i> Cash Retention Limit</h3>
+                <div class="input-group" style="margin-bottom:8px;"><label>Authorized Limit (INR)</label><input type="number" id="cash-limit-input" min="1000" step="1000" value="100000" oninput="updateInsightStudioWidgets()"></div>
+                <div class="insight-meter"><span id="cash-limit-fill" style="width:0%"></span></div>
+                <small id="cash-limit-text" class="insight-sub">Waiting for data...</small>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="badge-alert"></i> Key Alerts</h3>
+                <div id="insight-alerts" class="insight-list"></div>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="shield-check"></i> Data Completeness Score</h3>
+                <div class="insight-score" id="kyc-score">0%</div>
+                <div class="insight-meter"><span id="kyc-fill" style="width:0%"></span></div>
+                <small id="kyc-text" class="insight-sub"></small>
+              </div>
+            </div>
+
+            <div class="insight-grid" style="margin-top:16px;">
+              <div class="insight-card">
+                <h3><i data-lucide="target"></i> Monthly Scheme Targets</h3>
+                <div id="target-bars"></div>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="indian-rupee"></i> TD Incentive Predictor (Ledger-Based)</h3>
+                <div id="incentive-predictor" class="insight-list"></div>
+                <h3 style="margin-top:14px;"><i data-lucide="activity"></i> Pace Indicator</h3>
+                <div id="pace-indicator" class="insight-sub"></div>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="calendar-clock"></i> Upcoming Maturity Forecast</h3>
+                <div id="maturity-forecast" class="insight-list"></div>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="megaphone"></i> Campaign / Mela Tracker</h3>
+                <div class="form-row" style="margin-bottom:8px;">
+                  <div class="input-group"><label>From</label><input type="date" id="campaign-start"></div>
+                  <div class="input-group"><label>To</label><input type="date" id="campaign-end"></div>
+                </div>
+                <button class="btn btn-outline" onclick="runCampaignTracker()"><i data-lucide="search"></i> Evaluate Campaign</button>
+                <div id="campaign-results" class="insight-list" style="margin-top:10px;"></div>
+              </div>
+            </div>
+
+            <div class="insight-grid" style="margin-top:16px;">
+              <div class="insight-card">
+                <h3><i data-lucide="pie-chart"></i> TD Drill-Down</h3>
+                <div style="height:220px;"><canvas id="rep-chart-td-drill"></canvas></div>
+                <small class="insight-sub">Click the TD slice in Scheme Distribution to drill down.</small>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="line-chart"></i> 30-Day Closing Balance Trendline</h3>
+                <div style="height:220px;"><canvas id="rep-chart-closing"></canvas></div>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="timer"></i> Passbook TAT Graph</h3>
+                <div style="height:220px;"><canvas id="rep-chart-tat"></canvas></div>
+              </div>
+              <div class="insight-card">
+                <h3><i data-lucide="flame"></i> YoY Activity Heatmap</h3>
+                <div id="yoy-heatmap" class="heatmap-grid"></div>
+              </div>
+            </div>
+
+            <div class="insight-card" style="margin-top:16px;">
+              <h3><i data-lucide="scale"></i> Custom Date Benchmarking</h3>
+              <div class="form-row" style="margin-bottom:10px;">
+                <div class="input-group"><label>Period A From</label><input type="date" id="bench-a-start"></div>
+                <div class="input-group"><label>Period A To</label><input type="date" id="bench-a-end"></div>
+                <div class="input-group"><label>Period B From</label><input type="date" id="bench-b-start"></div>
+                <div class="input-group"><label>Period B To</label><input type="date" id="bench-b-end"></div>
+              </div>
+              <button class="btn btn-primary" onclick="runCustomBenchmark()"><i data-lucide="bar-chart-4"></i> Compare Periods</button>
+              <div id="benchmark-results" class="insight-list" style="margin-top:12px;"></div>
+            </div>
+
+            <div class="insight-card" style="margin-top:16px;">
+              <h3><i data-lucide="scan-search"></i> Anomaly Highlights</h3>
+              <div id="anomaly-list" class="insight-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="rep-section-bosummary" style="display:none;">
+          <div class="report-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+              <h2 class="card-title m-0"><i data-lucide="book-open"></i> Monthly BO Account Summary</h2>
+              <div style="display:flex; gap:8px;"><button class="btn btn-success no-print" onclick="exportSummaryCSV()"><i data-lucide="sheet"></i> Download Excel (CSV)</button></div>
+            </div>
+            <div class="report-toolbar">
+                <div class="flex gap-3" style="align-items:end; width:100%;">
+                    <div class="flex-1" style="max-width: 250px;"><label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Select Month</label><input type="month" id="summary-month" class="input-field w-full mt-1" onchange="generateBOSummaryReport()"></div>
+                    <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateBOSummaryReport()"><i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Generate Summary</button></div>
+                </div>
+            </div>
+            <div id="boSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="background: var(--bg-card);"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select month and click Generate Summary</div></div>
+          </div>
+        </div>
+
+        <div id="rep-section-accounts" style="display:none;">
+          <div class="report-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+              <h2 class="card-title m-0"><i data-lucide="users"></i> Account Summary Report</h2>
+              <div style="display:flex; gap:8px;"><button class="btn btn-outline" onclick="exportModulePDF('accSummaryWrap', 'Account_Summary_Report')"><i data-lucide="file-text"></i> Download PDF</button><button class="btn btn-success" onclick="exportExcelTable('accSummaryTable', 'Account_Summary_Report')"><i data-lucide="sheet"></i> Download Excel</button></div>
+            </div>
+            <div class="report-toolbar">
+                <div class="input-group" style="min-width: 220px;"><label>Filter by Scheme</label><select id="accScheme" class="input-field w-full mt-1"><option value="All">All Schemes</option><option value="SB">SB</option><option value="RD">RD</option><option value="MIS">MIS</option><option value="SSA">SSA</option><option value="1Y TD">1Y TD</option><option value="2Y TD">2Y TD</option><option value="3Y TD">3Y TD</option><option value="5Y TD">5Y TD</option><option value="SCSS">SCSS</option><option value="PPF">PPF</option></select></div>
+                <div class="input-group"><label>From Date</label><input type="date" id="accFromDate" class="input-field w-full mt-1"></div>
+                <div class="input-group"><label>To Date</label><input type="date" id="accToDate" class="input-field w-full mt-1"></div>
+                <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateAccountSummaryReport()"><i data-lucide="activity" style="width:16px;height:16px;"></i> Generate Insights</button></div>
+            </div>
+            <div id="accSummaryWrap" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                <div id="accInsightsArea" style="margin-bottom: 24px; display: none;">
+                    <h3 style="font-size: 0.875rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">Comparative Performance (vs Previous Periods)</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;" id="accInsightsCards"></div>
+                </div>
+                <div id="accSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="border:none;"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select filters and click Generate Insights</div></div>
+            </div>
           </div>
         </div>
       </div>
@@ -681,6 +1172,7 @@
           <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:20px;">
             <h3 style="font-size:1rem; font-weight:700; margin-bottom:8px;">Branch Profile</h3>
             <div class="input-group" style="margin-bottom:12px;"><label>BO Name</label><input type="text" id="set-boName" onchange="saveSettings()" placeholder="My Branch Office"></div>
+            <div class="input-group" style="margin-bottom:12px;"><label>Branch Postmaster</label><input type="text" id="set-bpmName" onchange="saveSettings()" placeholder="Branch Postmaster"></div>
             <div class="input-group" style="margin-bottom:12px;"><label>SPO Name</label><input type="text" id="set-spoName" onchange="saveSettings()"></div>
             <div class="input-group" style="margin-bottom:12px;"><label>HO Name</label><input type="text" id="set-hoName" onchange="saveSettings()"></div>
             <div class="holiday-manager">
@@ -699,12 +1191,53 @@
             <button class="btn btn-outline" style="width:100%; margin-bottom:12px; justify-content:center;" onclick="exportDataBackup()"><i data-lucide="download"></i> Download Full Backup</button>
             <input type="file" id="backupFileInput" accept=".json" style="display: none;" onchange="importDataBackup(event)">
             <button class="btn btn-outline" style="width:100%; justify-content:center;" onclick="document.getElementById('backupFileInput').click()"><i data-lucide="upload"></i> Restore from Backup</button>
+            <button class="btn btn-outline" style="width:100%; margin-top:12px; justify-content:center; color:var(--danger); border-color:var(--danger);" onclick="resetAllAppData()"><i data-lucide="trash-2"></i> Reset All App Data</button>
+            <div style="margin-top:18px; padding-top:18px; border-top:1px solid var(--border);">
+              <h3 style="font-size:1rem; font-weight:700; margin-bottom:8px;">Reminders</h3>
+              <div class="form-row" style="margin-bottom:10px;">
+                <div class="input-group"><label>Reminder Title</label><input type="text" id="reminderTitle" placeholder="Follow up passbook"></div>
+                <div class="input-group"><label>Due Date</label><input type="date" id="reminderDate"></div>
+              </div>
+              <button class="btn btn-primary" type="button" onclick="addReminder()" style="margin-bottom:12px;"><i data-lucide="plus"></i> Add Reminder</button>
+              <div id="reminderList" style="display:grid; gap:8px;"></div>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
 </main>
+
+<div id="inspectorAuditModal" class="modal-overlay no-print" style="display:none;">
+  <div class="modal-content" style="max-width: 980px; max-height: 88vh; overflow-y: auto;">
+    <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 class="modal-title" style="margin:0;">Inspector Audit View (Read-Only)</h3>
+      <button class="btn btn-icon" type="button" onclick="closeInspectorAuditView()" title="Close"><i data-lucide="x"></i></button>
+    </div>
+    <div id="inspectorAuditBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeInspectorAuditView()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="customerHistoryModal" class="modal-overlay no-print" style="display:none;">
+  <div class="modal-content" style="max-width: 780px;">
+    <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 class="modal-title" style="margin:0;">Customer History</h3>
+      <button class="btn btn-icon" type="button" onclick="closeCustomerHistoryModal()" title="Close"><i data-lucide="x"></i></button>
+    </div>
+    <div id="customerHistoryBody" style="display:grid; gap:16px;"></div>
+    <div class="input-group" style="margin-top:16px;">
+      <label>Follow-up Note</label>
+      <textarea id="customerHistoryNote" rows="4" placeholder="Add a follow-up note for this customer..."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeCustomerHistoryModal()">Close</button>
+      <button class="btn btn-primary" onclick="saveCustomerHistoryNote()">Save Note</button>
+    </div>
+  </div>
+</div>
 
 <!-- PRINTABLE TEMPLATES -->
 <div id="slip-print-area" class="print-only" style="font-family: monospace;">
