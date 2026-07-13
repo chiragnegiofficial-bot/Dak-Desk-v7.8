@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dak Desk V8.1.1</title>
+<title>Dak Desk V8.1</title>
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,11 +11,11 @@
 
 <!-- Dependencies -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lucide@0.468.0"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -1016,8 +1016,6 @@
           </div>
         </div>
 
-      </div>
-    </div>
           <div class="report-panel">
             <div class="card-header" style="margin-bottom: 16px;"><h2 class="card-title"><i data-lucide="bar-chart-3"></i> Branch Analytics</h2></div>
             <div class="report-toolbar no-print">
@@ -1124,43 +1122,6 @@
           </div>
         </div>
 
-        <div id="rep-section-bosummary" style="display:none;">
-          <div class="report-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-              <h2 class="card-title m-0"><i data-lucide="book-open"></i> Monthly BO Account Summary</h2>
-              <div style="display:flex; gap:8px;"><button class="btn btn-success no-print" onclick="exportSummaryCSV()"><i data-lucide="sheet"></i> Download Excel (CSV)</button></div>
-            </div>
-            <div class="report-toolbar">
-                <div class="flex gap-3" style="align-items:end; width:100%;">
-                    <div class="flex-1" style="max-width: 250px;"><label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Select Month</label><input type="month" id="summary-month" class="input-field w-full mt-1" onchange="generateBOSummaryReport()"></div>
-                    <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateBOSummaryReport()"><i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> Generate Summary</button></div>
-                </div>
-            </div>
-            <div id="boSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="background: var(--bg-card);"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select month and click Generate Summary</div></div>
-          </div>
-        </div>
-
-        <div id="rep-section-accounts" style="display:none;">
-          <div class="report-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-              <h2 class="card-title m-0"><i data-lucide="users"></i> Account Summary Report</h2>
-              <div style="display:flex; gap:8px;"><button class="btn btn-outline" onclick="exportModulePDF('accSummaryWrap', 'Account_Summary_Report')"><i data-lucide="file-text"></i> Download PDF</button><button class="btn btn-success" onclick="exportExcelTable('accSummaryTable', 'Account_Summary_Report')"><i data-lucide="sheet"></i> Download Excel</button></div>
-            </div>
-            <div class="report-toolbar">
-                <div class="input-group" style="min-width: 220px;"><label>Filter by Scheme</label><select id="accScheme" class="input-field w-full mt-1"><option value="All">All Schemes</option><option value="SB">SB</option><option value="RD">RD</option><option value="MIS">MIS</option><option value="SSA">SSA</option><option value="1Y TD">1Y TD</option><option value="2Y TD">2Y TD</option><option value="3Y TD">3Y TD</option><option value="5Y TD">5Y TD</option><option value="SCSS">SCSS</option><option value="PPF">PPF</option></select></div>
-                <div class="input-group"><label>From Date</label><input type="date" id="accFromDate" class="input-field w-full mt-1"></div>
-                <div class="input-group"><label>To Date</label><input type="date" id="accToDate" class="input-field w-full mt-1"></div>
-                <div class="flex items-end"><button class="btn btn-primary mt-1" style="height: 42px;" onclick="generateAccountSummaryReport()"><i data-lucide="activity" style="width:16px;height:16px;"></i> Generate Insights</button></div>
-            </div>
-            <div id="accSummaryWrap" style="background: var(--bg-input); padding: 16px; border-radius: var(--radius-md); border: 1px solid var(--border);">
-                <div id="accInsightsArea" style="margin-bottom: 24px; display: none;">
-                    <h3 style="font-size: 0.875rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px;">Comparative Performance (vs Previous Periods)</h3>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;" id="accInsightsCards"></div>
-                </div>
-                <div id="accSummaryTableArea" class="table-container mt-4 overflow-x-auto" style="border:none;"><div style="padding: 32px; text-align: center; color: var(--text-muted);">Select filters and click Generate Insights</div></div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 
