@@ -16,7 +16,8 @@ const boPaymentSchemes = ['Remittance to AO', 'SB Withdrawal', 'IPPB Withdrawal'
 const INCENTIVE_RATES = {1:0.005, 2:0.01, 3:0.01, 5:0.02};
 let activeRegIds = { acc: '', phone: '', cif: '', aadhaar: '', pan: '' };
 let repChartCashFlow = null, repChartSchemes = null, repChartClosing = null, repChartTat = null, repChartTdDrill = null, dashChartSchemes = null, tdChart = null;
-let currentEditIndex = -1, modifyIndex = -1, pendingEntry = null;
+let currentEditIndex = -1, modifyIndex = -1, pendingEntry = null, currentCustomerHistoryIndex = -1;
+let cashEntrySequence = 0;
 let selectedLedgerIndices = new Set(), lastFilteredLedgerIndices = [];
 let ledgerViewMode = 'scheme';
 let memAuditLog = [], memRecycleBin = [], memReminders = [], memReceiptHistory = [], memClosingChecklists = {};
@@ -87,6 +88,11 @@ function createExportFilename(moduleName, extension = '') {
     const serial = String((randomValue % 900000) + 100000);
     const suffix = String(extension || '').replace(/^\./, '');
     return `DakDesk_${safeName}_${date}_SR-${serial}${suffix ? `.${suffix}` : ''}`;
+}
+function createCashEntryId() {
+    // Date.now() alone can collide when entries are added quickly (for example via keyboard shortcuts).
+    cashEntrySequence = (cashEntrySequence + 1) % 1000;
+    return Date.now() * 1000 + cashEntrySequence;
 }
 
 function printModule(moduleName, printClass) {
@@ -160,7 +166,7 @@ function switchTab(name){
   
   if (name === 'dashboard') renderDashboard();
   if (name === 'cashbook') { loadCashBookDate(); checkTallyDate(); }
-  if (name === 'reports') { initInsightsStudioFilters(); runInsightsStudio(); }
+  if (name === 'reports') { initInsightsStudioFilters(); runInsightsStudio(); generateReportCharts(); }
     if (name === 'rates') { updatePosbCalculator(); initIntegratedPosbCalculator(); }
   if (name === 'register') { setTimeout(() => { const container = document.querySelector('#tab-panel-register .table-container'); if (container) container.scrollTop = container.scrollHeight; }, 100); }
 }
@@ -312,6 +318,7 @@ async function initApp() {
     document.getElementById('set-spoName').value = globalSpoName; 
     document.getElementById('set-hoName').value = globalHoName;
     renderHolidayList();
+    renderReminders();
     document.getElementById('bpmName').value = globalBpmName;
     document.getElementById('spoName').value = globalSpoName; 
     document.getElementById('hoName').value = globalHoName; 
@@ -1234,7 +1241,7 @@ async function addCashBookEntry(type) {
     if (treasuryState.isSaved || treasuryState.isLocked) return alert('Treasury is closed for the day. Re-open it before adding entries.');
     if(!date || !Number.isFinite(amt) || amt <= 0) return alert("Enter an amount greater than zero.");
     const desc = scheme.includes('General') ? (descRaw || 'Other') : (descRaw ? `[${scheme}] ${descRaw}` : `[${scheme}]`);
-    memCbData.push({ id: Date.now(), date, desc, type, amt }); await localforage.setItem('cashBookDataV2', memCbData); document.getElementById(`cb-${type.substring(0,3)}-desc`).value = ''; document.getElementById(`cb-${type.substring(0,3)}-amt`).value = ''; loadCashBookDate();
+    memCbData.push({ id: createCashEntryId(), date, desc, type, amt }); await localforage.setItem('cashBookDataV2', memCbData); document.getElementById(`cb-${type.substring(0,3)}-desc`).value = ''; document.getElementById(`cb-${type.substring(0,3)}-amt`).value = ''; loadCashBookDate();
 }
 async function deleteCbRow(id) { if(confirm("Delete this entry?")) { memCbData = memCbData.filter(d => d.id !== id); await localforage.setItem('cashBookDataV2', memCbData); loadCashBookDate(); } }
 async function saveCashBookDate() { let date = document.getElementById('cb-main-date').value; const treasuryState = getTreasuryWorkflowState(date); if (treasuryState.closedReason) return alert(`No treasury transactions are allowed on ${treasuryState.closedReason}.`); let closeBal = Number(document.getElementById('cb-cur-bal').textContent.replace(/[^\d.-]/g, '')); if (!memCbStates[date]) memCbStates[date] = {}; memCbStates[date].saved = true; memCbStates[date].closingBalance = closeBal; await localforage.setItem('cashBookStatesV2', memCbStates); loadCashBookDate(); openCashTallyMenu(); }
@@ -1275,7 +1282,7 @@ async function saveCashTally() {
     renderCashHistory(); loadCashBookDate(); openCashTallyMenu(); showToast("🔒 Day Ended! Tally saved and locked.");
 }
 async function deleteLoadedTally() { let d = document.getElementById('cb-main-date').value; let existingIdx = memTallyHist.findIndex(t => t.date === d); if (existingIdx !== -1) { if(!confirm(`Delete the Cash Tally for ${d}?`)) return; memTallyHist.splice(existingIdx, 1); if(memCbStates[d]) memCbStates[d].tallyLocked = false; await localforage.setItem('cashTallyHistory', memTallyHist); await localforage.setItem('cashBookStatesV2', memCbStates); clearCashTally(); showToast("🗑 Tally deleted."); loadCashBookDate(); renderCashHistory(); } }
-function renderCashHistory() { const el = document.getElementById('cashHistoryList'); if(!memTallyHist.length) return el.innerHTML='<div style="text-align:center; padding:32px; color:var(--text-muted); font-size:0.875rem; border:1px dashed var(--border); border-radius:8px;">No saved tallies yet.</div>'; el.innerHTML = memTallyHist.map((b,i) => `<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border:1px solid var(--border); border-radius:8px; background:var(--bg-input);"><div><strong style="display:block; font-size:0.875rem;">${b.label}</strong><span style="font-size:0.75rem; color:var(--text-muted);">Total: ${money(b.total)} · Date: ${b.date}</span></div><button class="btn btn-outline" onclick="loadCashTally(${i})" style="height:auto;">Load</button></div>`).join(""); }
+function renderCashHistory() { const el = document.getElementById('cashHistoryList'); if(!memTallyHist.length) return el.innerHTML='<div style="text-align:center; padding:32px; color:var(--text-muted); font-size:0.875rem; border:1px dashed var(--border); border-radius:8px;">No saved tallies yet.</div>'; el.innerHTML = memTallyHist.map((b,i) => `<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border:1px solid var(--border); border-radius:8px; background:var(--bg-input);"><div><strong style="display:block; font-size:0.875rem;">${escapeHTML(b.label)}</strong><span style="font-size:0.75rem; color:var(--text-muted);">Total: ${money(b.total)} · Date: ${escapeHTML(b.date)}</span></div><button class="btn btn-outline" onclick="loadCashTally(${i})" style="height:auto;">Load</button></div>`).join(""); }
 window.loadCashTally = function(i) { if(!confirm("Load this tally? Current inputs will be replaced.")) return; const b = memTallyHist[i]; document.getElementById('cash-tally-name').value = b.label; document.getElementById('cb-main-date').value = b.date; loadCashBookDate(); [500,200,100,50,20,10,5,2,1].forEach(n => { document.getElementById(`c-${n}`).value = b.notes[n] || ''; }); calcCash(); }
 
 function printBoda() {
@@ -2077,6 +2084,7 @@ function renderRegTable() {
             </td>
             <td class="text-right no-print">
                 <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                    <button class="btn-icon" onclick="openCustomerHistoryModal(${e.originalIndex})" title="Customer History"><i data-lucide="history"></i></button>
                     <button class="btn-icon" onclick="openLedgerEditModal(${e.originalIndex})" title="Edit Entry"><i data-lucide="edit-2"></i></button>
                     <button class="btn-icon text-danger" onclick="delReg(${e.originalIndex})" title="Delete Entry"><i data-lucide="trash-2"></i></button>
                 </div>
@@ -2098,6 +2106,35 @@ window.exportLedgerExcel = function() {
     let sortedData = [...memAccReg].sort((a, b) => { let dateDiff = new Date(a.date) - new Date(b.date); if (dateDiff !== 0) return dateDiff; let prA = parseInt(a.prNo) || 99999; let prB = parseInt(b.prNo) || 99999; return prA - prB; });
     const exportData = sortedData.map((e, index) => ({ "Sr No": index + 1, "Date": e.date, "Name": e.name, "Account No": e.acc || '', "CIF": e.cif || '', "Phone": e.phone || '', "Aadhaar": e.aadhaar || '', "PAN": e.pan || '', "Scheme": e.scheme, "Deposit Amount": e.amt, "PR No": e.prNo || '', "Passbook Status": e.pbStatus, "Remarks": e.remarks || '' }));
     const worksheet = XLSX.utils.json_to_sheet(exportData); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Ledger"); XLSX.writeFile(workbook, createExportFilename('Smart_Ledger_Account_Export', 'xlsx'));
+};
+
+window.openCustomerHistoryModal = function(index) {
+    const entry = memAccReg[index];
+    if (!entry) return;
+    currentCustomerHistoryIndex = index;
+    const notes = Array.isArray(entry.historyNotes) ? entry.historyNotes : [];
+    document.getElementById('customerHistoryBody').innerHTML = `
+        <div class="insight-card"><strong>${escapeHTML(entry.name || 'Unnamed Customer')}</strong><div class="insight-sub">${escapeHTML(entry.scheme || '--')} · A/C ${escapeHTML(entry.acc || 'Pending')} · ${money(entry.amt)}</div></div>
+        <div>${notes.length ? notes.map(note => `<div class="insight-pill">${escapeHTML(note.at)} · ${escapeHTML(note.text)}</div>`).join('') : '<div class="insight-pill">No follow-up notes yet.</div>'}</div>`;
+    document.getElementById('customerHistoryNote').value = '';
+    document.getElementById('customerHistoryModal').style.display = 'flex';
+};
+
+window.closeCustomerHistoryModal = function() {
+    document.getElementById('customerHistoryModal').style.display = 'none';
+    currentCustomerHistoryIndex = -1;
+};
+
+window.saveCustomerHistoryNote = async function() {
+    const entry = memAccReg[currentCustomerHistoryIndex];
+    const noteEl = document.getElementById('customerHistoryNote');
+    const text = noteEl?.value.trim();
+    if (!entry || !text) return alert('Write a follow-up note first.');
+    entry.historyNotes = Array.isArray(entry.historyNotes) ? entry.historyNotes : [];
+    entry.historyNotes.unshift({ at: new Date().toLocaleString('en-IN'), text });
+    await localforage.setItem('accRegister', memAccReg);
+    window.openCustomerHistoryModal(currentCustomerHistoryIndex);
+    showToast('Customer history note saved.');
 };
 
 function openLedgerEditModal(i) {
@@ -3404,10 +3441,42 @@ function checkBackupReminder() {
     if (!lastBackup || (now - parseInt(lastBackup)) > 7 * 24 * 60 * 60 * 1000) { setTimeout(() => { showToast("⚠️ Reminder: Please export a data backup today to keep your records safe!"); }, 3000); }
 }
 
+function renderReminders() {
+    const list = document.getElementById('reminderList');
+    if (!list) return;
+    const reminders = [...memReminders].sort((a, b) => String(a.dueDate || '').localeCompare(String(b.dueDate || '')));
+    list.innerHTML = reminders.length
+        ? reminders.map(reminder => `<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg-input);"><div><strong>${escapeHTML(reminder.title)}</strong><small style="display:block; color:var(--text-muted); margin-top:2px;">Due: ${escapeHTML(reminder.dueDate)}</small></div><button class="btn btn-icon text-danger" type="button" onclick="deleteReminder(${Number(reminder.id)})" title="Delete reminder"><i data-lucide="trash-2"></i></button></div>`).join('')
+        : '<div style="color:var(--text-muted); font-size:0.875rem;">No reminders scheduled.</div>';
+    lucide.createIcons();
+}
+
+window.addReminder = async function() {
+    const titleEl = document.getElementById('reminderTitle');
+    const dateEl = document.getElementById('reminderDate');
+    const title = titleEl?.value.trim();
+    const dueDate = dateEl?.value;
+    if (!title || !dueDate) return alert('Enter a reminder title and due date.');
+    memReminders.push({ id: Date.now(), title, dueDate, createdAt: new Date().toISOString() });
+    await localforage.setItem('customerRemindersV1', memReminders);
+    titleEl.value = ''; dateEl.value = '';
+    renderReminders(); renderDashboard();
+    showToast('Reminder added.');
+};
+
+window.deleteReminder = async function(id) {
+    memReminders = memReminders.filter(reminder => Number(reminder.id) !== Number(id));
+    await localforage.setItem('customerRemindersV1', memReminders);
+    renderReminders(); renderDashboard();
+    showToast('Reminder deleted.');
+};
+
 window.exportDataBackup = async function() {
-  const dataToBackup = { appSettingsV5: await localforage.getItem('appSettingsV5'), accRegister: await localforage.getItem('accRegister'), tdBillEntries: await localforage.getItem('tdBillEntries'), cashBookDataV2: await localforage.getItem('cashBookDataV2'), tdBillBoName: await localforage.getItem('tdBillBoName'), cashBookStatesV2: await localforage.getItem('cashBookStatesV2'), cashTallyHistory: await localforage.getItem('cashTallyHistory'), tdBillHistory: await localforage.getItem('tdBillHistory'), tdBillSpo: await localforage.getItem('tdBillSpo'), tdBillHo: await localforage.getItem('tdBillHo'), manualOverridesV5: await localforage.getItem('manualOverridesV5'), branchHolidayDates: await localforage.getItem('branchHolidayDates'), branchHolidayNames: await localforage.getItem('branchHolidayNames') };
+  const backupKeys = ['appSettingsV5', 'accRegister', 'tdBillEntries', 'cashBookDataV2', 'tdBillBoName', 'tdBillBpmName', 'cashBookStatesV2', 'cashTallyHistory', 'tdBillHistory', 'tdBillSpo', 'tdBillHo', 'manualOverridesV5', 'branchHolidayDates', 'branchHolidayNames', 'auditTrailV1', 'recycleBinV1', 'customerRemindersV1', 'receiptHistoryV1', 'closingChecklistsV1'];
+  const dataToBackup = { version: 8, localForage: {}, localStorage: { schemeTargetsV1: localStorage.getItem('schemeTargetsV1'), lastMasterReportArchivedMonth: localStorage.getItem('lastMasterReportArchivedMonth') } };
+  for (const key of backupKeys) dataToBackup.localForage[key] = await localforage.getItem(key);
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToBackup));
-  const link = document.createElement('a'); link.setAttribute("href", dataStr); link.setAttribute("download", createExportFilename('Full_Data_Backup_V7', 'json')); document.body.appendChild(link); link.click(); link.remove();
+  const link = document.createElement('a'); link.setAttribute("href", dataStr); link.setAttribute("download", createExportFilename('Full_Data_Backup_V8', 'json')); document.body.appendChild(link); link.click(); link.remove();
   localStorage.setItem('lastBackupDate', Date.now()); showToast("✅ Backup Downloaded");
 };
 
@@ -3416,9 +3485,17 @@ window.importDataBackup = function(event) {
   reader.onload = async function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      const allowedKeys = ['appSettingsV5', 'accRegister', 'tdBillEntries', 'cashBookDataV2', 'cashBookStatesV2', 'cashTallyHistory', 'tdBillHistory', 'tdBillBoName', 'tdBillSpo', 'tdBillHo', 'manualOverridesV5', 'branchHolidayDates', 'branchHolidayNames'];
+      const allowedKeys = ['appSettingsV5', 'accRegister', 'tdBillEntries', 'cashBookDataV2', 'cashBookStatesV2', 'cashTallyHistory', 'tdBillHistory', 'tdBillBoName', 'tdBillBpmName', 'tdBillSpo', 'tdBillHo', 'manualOverridesV5', 'branchHolidayDates', 'branchHolidayNames', 'auditTrailV1', 'recycleBinV1', 'customerRemindersV1', 'receiptHistoryV1', 'closingChecklistsV1'];
+      const savedData = data.localForage && typeof data.localForage === 'object' ? data.localForage : data;
+      if (!savedData || typeof savedData !== 'object') throw new Error('Invalid backup format.');
       for (const key of allowedKeys) {
-        if (Object.prototype.hasOwnProperty.call(data, key)) await localforage.setItem(key, data[key]);
+        if (Object.prototype.hasOwnProperty.call(savedData, key)) await localforage.setItem(key, savedData[key]);
+      }
+      if (data.localStorage && typeof data.localStorage === 'object') {
+        ['schemeTargetsV1', 'lastMasterReportArchivedMonth'].forEach(key => {
+          const value = data.localStorage[key];
+          if (typeof value === 'string') localStorage.setItem(key, value); else localStorage.removeItem(key);
+        });
       }
       alert("✅ Data Restored! Refreshing application..."); window.location.reload(); 
     } catch(err) { alert("❌ Error loading backup. Invalid JSON file."); }
@@ -3435,6 +3512,8 @@ window.resetAllAppData = async function() {
     try {
         await localforage.clear();
         localStorage.removeItem('lastBackupDate');
+        localStorage.removeItem('schemeTargetsV1');
+        localStorage.removeItem('lastMasterReportArchivedMonth');
         alert('All app data has been reset. The app will now reload.');
         window.location.reload();
     } catch (err) {
