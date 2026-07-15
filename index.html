@@ -16,6 +16,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -148,6 +149,19 @@
       <button class="btn btn-outline" onclick="closeBoCustomerDetailsModal()">Cancel</button>
       <button class="btn btn-primary" id="boDetailSaveBtn" onclick="saveBoCustomerDetailsModal()" disabled>Save & Mark At BO</button>
     </div>
+  </div>
+</div>
+
+<div id="masterVisualModal" class="modal-overlay no-print">
+  <div class="modal-content master-visual-modal">
+    <div class="master-visual-head"><div><h3 class="modal-title">Unified Master Report Explorer</h3><p>Interactive view for the selected reporting period.</p></div><button class="btn btn-outline" onclick="closeMasterReportExplorer()"><i data-lucide="x"></i> Close</button></div>
+    <div class="master-visual-controls">
+      <div class="input-group"><label>Scheme</label><select id="master-visual-scheme" onchange="renderMasterReportExplorer()"><option value="All">All Schemes</option></select></div>
+      <div class="input-group"><label>Focus</label><select id="master-visual-focus" onchange="renderMasterReportExplorer()"><option value="deposit">Deposits</option><option value="accounts">Accounts</option></select></div>
+    </div>
+    <div class="master-visual-kpis" id="master-visual-kpis"></div>
+    <div class="master-visual-grid"><section><h4>Daily portfolio activity</h4><div class="master-chart-wrap"><canvas id="master-visual-activity"></canvas></div></section><section><h4>Portfolio distribution</h4><div class="master-chart-wrap"><canvas id="master-visual-schemes"></canvas></div></section><section><h4>Passbook pipeline</h4><div class="master-chart-wrap"><canvas id="master-visual-pipeline"></canvas></div></section><section><h4>Cash movement</h4><div class="master-chart-wrap"><canvas id="master-visual-cash"></canvas></div></section></div>
+    <div class="master-visual-detail"><h4 id="master-visual-detail-title">Selected portfolio records</h4><div id="master-visual-detail-body"></div></div>
   </div>
 </div>
 
@@ -312,6 +326,12 @@
           </div>
         </div>
 
+        <div class="input-group" style="margin: 16px 0 24px;">
+          <label for="cb-ao-dispatch">AO Dispatch / Documents Sent</label>
+          <textarea id="cb-ao-dispatch" rows="2" style="min-height:70px;" placeholder="e.g. 4 SB bookings; 2 account closures; 3 new account opening forms" onchange="saveAoDispatch()"></textarea>
+          <small style="color:var(--text-muted);">Saved against this treasury date and included on the printed BO slip.</small>
+        </div>
+
         <div class="stats-grid treasury-stats" style="margin-top: 24px;">
           <div class="stat-card" style="padding: 16px; flex-direction: column; gap: 0;">
             <div class="stat-card-title">Opening Balance</div>
@@ -357,6 +377,17 @@
           <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border:1px dashed var(--border); border-radius:var(--radius-md); background:var(--bg-input);">
             <span style="font-size:0.875rem; font-weight:600; color:var(--text-muted);">Combined Treasury Value</span>
             <span id="cb-treasury-total" style="font-size:1.2rem; font-weight:800; color:var(--brand-red);">₹0</span>
+          </div>
+          <div id="cb-reconciliation" style="margin-top:16px; padding:16px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-app);">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px;"><strong style="font-size:0.9rem;">Daily Reconciliation</strong><span id="cb-recon-status" class="badge">Awaiting physical tally</span></div>
+            <div class="form-row" style="margin-bottom:0; gap:12px;">
+              <div style="flex:1; font-size:0.8rem; color:var(--text-muted);">Cash-book closing<br><strong id="cb-recon-book-cash" style="color:var(--text-main); font-size:1rem;">₹0.00</strong></div>
+              <div style="flex:1; font-size:0.8rem; color:var(--text-muted);">Physical cash<br><strong id="cb-recon-physical-cash" style="color:var(--text-main); font-size:1rem;">₹0.00</strong></div>
+              <div style="flex:1; font-size:0.8rem; color:var(--text-muted);">Stamps & stationery<br><strong id="cb-recon-stock" style="color:var(--text-main); font-size:1rem;">₹0.00</strong></div>
+              <div style="flex:1; font-size:0.8rem; color:var(--text-muted);">Remittance to AO<br><strong id="cb-recon-remittance" style="color:var(--text-main); font-size:1rem;">₹0.00</strong></div>
+              <div style="flex:1; font-size:0.8rem; color:var(--text-muted);">Cash difference<br><strong id="cb-recon-difference" style="font-size:1rem;">₹0.00</strong></div>
+            </div>
+            <small id="cb-recon-note" style="display:block; margin-top:12px; color:var(--text-muted);">Enter denomination counts to reconcile physical cash.</small>
           </div>
         </div>
 
@@ -448,7 +479,7 @@
           <h2 class="card-title"><i data-lucide="receipt"></i> TD Incentive Bill Entry</h2>
           <div class="no-print" style="display:flex; gap:8px;">
             <button class="btn btn-success" onclick="syncTdFromLedger()"><i data-lucide="refresh-ccw"></i> Sync Ledger</button>
-            <button class="btn btn-outline" onclick="exportModulePDF('printable-area-wrap', 'TD_Commission_Bill')"><i data-lucide="file-text"></i> PDF</button>
+            <button class="btn btn-outline" onclick="printBill()" title="Choose Save as PDF in the print dialog for a multi-page bill"><i data-lucide="file-text"></i> PDF</button>
             <button class="btn btn-outline" onclick="exportExcelTable('tdBillTable', 'TD_Bill')"><i data-lucide="sheet"></i> Excel</button>
             <button class="btn btn-outline" onclick="printBill()"><i data-lucide="printer"></i> Print</button>
             <button class="btn btn-outline" onclick="openNewBillModal()"><i data-lucide="file-plus"></i> New Bill</button>
@@ -823,6 +854,7 @@
           </div>
           <div class="is-filter-bar-right">
             <button class="btn btn-primary" onclick="runInsightsStudio()"><i data-lucide="refresh-cw"></i> Refresh</button>
+            <button class="btn btn-outline" onclick="openBOSummary()"><i data-lucide="book-open"></i> BO Summary</button>
             <button class="btn btn-outline" onclick="generateUnifiedMasterReport()"><i data-lucide="file-stack"></i> Export Report</button>
           </div>
         </div>
@@ -1024,6 +1056,7 @@
               <button class="btn btn-primary" onclick="generateReportCharts()"><i data-lucide="filter" style="width:16px;height:16px;"></i> Update Charts</button>
             </div>
             <div class="report-toolbar no-print" style="margin-top:-8px;">
+              <button class="btn btn-outline" onclick="openMasterReportExplorer()"><i data-lucide="chart-no-axes-combined"></i> Interactive Visuals</button>
               <button class="btn btn-primary" onclick="generateUnifiedMasterReport()"><i data-lucide="file-stack"></i> Unified Master Report PDF</button>
               <button class="btn btn-outline" onclick="forwardMasterReportWhatsApp()"><i data-lucide="message-circle"></i> WhatsApp Forward</button>
               <button class="btn btn-success" onclick="exportPivotReadyData()"><i data-lucide="sheet"></i> Pivot-Ready CSV</button>
@@ -1256,6 +1289,7 @@
       <span>Account Office: <strong id="boda-ao"></strong></span>
       <span>Date: <strong id="boda-date"></strong></span>
     </div>
+    <div class="boda-reference">Document Ref: <strong id="boda-reference"></strong></div>
   </div>
 
   <div class="boda-grid">
@@ -1294,6 +1328,37 @@
     <div id="boda-notes-breakdown"></div>
   </div>
 
+  <div class="boda-reconciliation">
+    <h3>Daily Reconciliation</h3>
+    <table class="boda-table">
+      <tbody>
+        <tr><td>Cash-book Closing Balance</td><td id="boda-recon-book-cash">₹0.00</td></tr>
+        <tr><td>Physical Cash</td><td id="boda-recon-physical-cash">₹0.00</td></tr>
+        <tr><td>Postage Stamps</td><td id="boda-recon-postage">₹0.00</td></tr>
+        <tr><td>Revenue Stamps</td><td id="boda-recon-revenue">₹0.00</td></tr>
+        <tr><td>Postal Stationery</td><td id="boda-recon-stationery">₹0.00</td></tr>
+        <tr><td>Remittance to AO</td><td id="boda-recon-remittance">₹0.00</td></tr>
+        <tr class="boda-grand-row"><td>Closing Cash + Stamp / Stationery Balance</td><td id="boda-recon-total-holdings">₹0.00</td></tr>
+        <tr><td>Reconciliation Status</td><td id="boda-recon-status">Awaiting physical tally</td></tr>
+      </tbody>
+    </table>
+    <div id="boda-recon-note" class="boda-recon-note"></div>
+  </div>
+
+  <div id="boda-account-openings-section" class="boda-account-openings">
+    <h3>Account Openings / Bookings Sent to AO</h3>
+    <table class="boda-table">
+      <thead><tr><th>Scheme</th><th>PR No.</th><th>Amount (₹)</th></tr></thead>
+      <tbody id="boda-account-openings-body"></tbody>
+      <tfoot><tr class="boda-grand-row"><td colspan="2">Total Account Opening Amount</td><td id="boda-account-openings-total">₹0.00</td></tr></tfoot>
+    </table>
+  </div>
+
+  <div id="boda-ao-dispatch-section" class="boda-ao-dispatch">
+    <h3>AO Dispatch / Documents Sent</h3>
+    <div id="boda-ao-dispatch-text"></div>
+  </div>
+
   <div id="boda-remark-section" class="boda-remarks">
     <h3>Remarks</h3>
     <div id="boda-remark-text"></div>
@@ -1303,6 +1368,7 @@
     <div>BO Date Stamp</div>
     <div>Signature of BPM</div>
   </div>
+  <div class="boda-qr-wrap boda-qr-bottom"><div id="boda-qr-code" aria-label="BO slip treasury QR code"></div><small id="boda-qr-note">Scan for treasury details</small></div>
 </section>
 
 <script src="app.js"></script>
