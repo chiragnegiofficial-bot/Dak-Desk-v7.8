@@ -99,9 +99,21 @@ function printModule(moduleName, printClass) {
     const originalTitle = document.title;
     document.title = createExportFilename(moduleName);
     document.body.classList.add(printClass);
+    // Some browsers (notably Safari) return from window.print() as soon as the
+    // preview opens.  Removing the print class immediately then leaves a
+    // print-only template hidden before it is rendered.
+    let cleanedUp = false;
+    const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        document.body.classList.remove(printClass);
+        document.title = originalTitle;
+    };
+    window.addEventListener('afterprint', cleanup, { once: true });
     window.print();
-    document.body.classList.remove(printClass);
-    document.title = originalTitle;
+    // Fallback for browsers that do not dispatch afterprint. Keep it long
+    // enough that a user can select a printer or adjust print settings.
+    window.setTimeout(cleanup, 5 * 60 * 1000);
 }
 function showToast(msg) { const t = document.getElementById('toastMsg'); document.getElementById('toastText').textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 4000); }
 async function addAudit(action, module, details = '') { memAuditLog.unshift({ id: Date.now()+Math.random(), at: new Date().toISOString(), action, module, details }); if(memAuditLog.length>1000) memAuditLog.length=1000; await localforage.setItem('auditTrailV1',memAuditLog); }
@@ -2527,8 +2539,22 @@ function getInsightsDateRange() {
         const firstOfMonth = today.slice(0, 7) + '-01';
         return { from: firstOfMonth, to: today };
     }
-    return { from, to };
+    return from <= to ? { from, to } : null;
 }
+
+function syncInsightsReportRange(from, to) {
+    const legacyFrom = document.getElementById('rep-start');
+    const legacyTo = document.getElementById('rep-end');
+    if (legacyFrom) legacyFrom.value = from;
+    if (legacyTo) legacyTo.value = to;
+}
+
+window.exportInsightsReport = function() {
+    const range = getInsightsDateRange();
+    if (!range) return showToast('The start date must be on or before the end date.');
+    syncInsightsReportRange(range.from, range.to);
+    window.generateUnifiedMasterReport();
+};
 
 function getCompareRange(from, to, mode) {
     if (mode === 'none') return null;
@@ -2554,7 +2580,7 @@ function getCompareRange(from, to, mode) {
     return null;
 }
 
-function getDataForRange(from, to, schemeFilter) {
+function getDataForRange(from, to, schemeFilter, pipelineScope = 'backlog') {
     let entries = memAccReg.filter(e => e.date >= from && e.date <= to);
     if (schemeFilter && schemeFilter !== 'All') entries = entries.filter(e => e.scheme === schemeFilter);
     const totalDeposits = entries.reduce((s, e) => s + (Number(e.amt) || 0), 0);
@@ -2577,7 +2603,8 @@ function getDataForRange(from, to, schemeFilter) {
     });
 
     // Pipeline
-    const allPipeline = schemeFilter === 'All' ? memAccReg : memAccReg.filter(e => e.scheme === schemeFilter);
+    const pipelineBase = pipelineScope === 'period' ? entries : memAccReg;
+    const allPipeline = schemeFilter === 'All' ? pipelineBase : pipelineBase.filter(e => e.scheme === schemeFilter);
     const pendingAO = allPipeline.filter(e => e.pbStatus === 'Pending AO').length;
     const atBO = allPipeline.filter(e => e.pbStatus === 'At BO').length;
     const delivered = allPipeline.filter(e => e.pbStatus === 'Delivered').length;
@@ -2604,7 +2631,7 @@ function getDataForRange(from, to, schemeFilter) {
         };
     });
 
-    return { totalDeposits, totalAccounts, avgDeposit, tdIncentive, schemeMap, pendingAO, atBO, delivered, trend, entries };
+    return { totalDeposits, totalAccounts, avgDeposit, tdIncentive, schemeMap, pendingAO, atBO, delivered, trend, entries, pipelineEntries: allPipeline, pipelineScope };
 }
 
 function deltaHTML(curr, prev, isAmount = false) {
@@ -2661,7 +2688,11 @@ function drawPortfolioChart(schemeMap) {
     if (isPortfolioChart) { isPortfolioChart.destroy(); isPortfolioChart = null; }
     const schemes = Object.keys(schemeMap);
     const total = schemes.reduce((s, k) => s + schemeMap[k].deposits, 0);
-    if (!total) return;
+    if (!total) {
+        const legend = document.getElementById('is-portfolio-legend');
+        if (legend) legend.innerHTML = '<span class="is-empty-state">No portfolio data for this selection.</span>';
+        return;
+    }
     const colors = ['#8b1e3f','#4c1d95','#0f766e','#c97a1f','#2563eb','#7c3aed','#0891b2','#65a30d','#d97706','#9f1239','#166534','#1d4ed8'];
     isPortfolioChart = new Chart(ctx, {
         type: 'doughnut',
@@ -2701,12 +2732,12 @@ function buildInsights(curr, prev, allEntries, from, to) {
     }
 
     const pendingOld = memAccReg.filter(e => e.pbStatus === 'Pending AO');
-    if (pendingOld.length >= 10) insights.push({ type: 'yellow', title: 'Passbook Processing Needs Attention', desc: `${pendingOld.length} passbook${pendingOld.length === 1 ? '' : 's'} are currently pending at Account Office.` });
+    if (pendingOld.length >= 10) insights.push({ type: 'yellow', title: 'Passbook Processing Needs Attention', desc: `${pendingOld.length} passbook${pendingOld.length === 1 ? '' : 's'} are currently pending at Account Office.`, action: 'pipeline', actionLabel: 'Open pipeline' });
 
     const atBOEntries = memAccReg.filter(e => e.pbStatus === 'At BO');
     const today = getLocalISODate();
     const stuckAtBO = atBOEntries.filter(e => e.date && ((new Date(today) - new Date(e.date)) / 86400000) > 7);
-    if (stuckAtBO.length > 0) insights.push({ type: 'red', title: 'Action Required – Pending Delivery', desc: `${stuckAtBO.length} account${stuckAtBO.length === 1 ? '' : 's'} ${stuckAtBO.length === 1 ? 'has' : 'have'} been "At BO" for more than 7 days.` });
+    if (stuckAtBO.length > 0) insights.push({ type: 'red', title: 'Action Required – Pending Delivery', desc: `${stuckAtBO.length} account${stuckAtBO.length === 1 ? '' : 's'} ${stuckAtBO.length === 1 ? 'has' : 'have'} been "At BO" for more than 7 days.`, action: 'pipeline', actionLabel: 'Review delivery board' });
 
     // TD incentive opportunity
     const tdEntries = curr.entries.filter(e => ['1Y TD','2Y TD','3Y TD','5Y TD'].includes(e.scheme));
@@ -2714,13 +2745,13 @@ function buildInsights(curr, prev, allEntries, from, to) {
     if (tdEntries.length > 0) {
         const td5Share = td5Entries.length / tdEntries.length;
         const td5IncShare = td5Entries.reduce((s,e)=>s+(e.amt||0),0) * 0.02 / (curr.tdIncentive || 1);
-        if (td5Share < 0.35 && td5IncShare > 0.4) insights.push({ type: 'blue', title: 'TD Incentive Opportunity', desc: `5-Year TD represents only ${(td5Share*100).toFixed(0)}% of TD accounts but generates ~${(td5IncShare*100).toFixed(0)}% of your TD incentive. Increasing 5Y TD share could significantly boost incentive earnings.` });
+        if (td5Share < 0.35 && td5IncShare > 0.4) insights.push({ type: 'blue', title: 'TD Incentive Opportunity', desc: `5-Year TD represents only ${(td5Share*100).toFixed(0)}% of TD accounts but generates ~${(td5IncShare*100).toFixed(0)}% of your TD incentive. Increasing 5Y TD share could significantly boost incentive earnings.`, action: 'td', actionLabel: 'Open TD billing' });
     }
 
     const schemeKeys = Object.keys(curr.schemeMap);
     if (schemeKeys.length > 0) {
         const top = schemeKeys.reduce((a, b) => curr.schemeMap[a].deposits >= curr.schemeMap[b].deposits ? a : b);
-        insights.push({ type: 'green', title: 'Top Performing Scheme', desc: `${top} leads with ${money(curr.schemeMap[top].deposits)} in deposits across ${curr.schemeMap[top].accounts} account${curr.schemeMap[top].accounts === 1 ? '' : 's'} this period.` });
+        insights.push({ type: 'green', title: 'Top Performing Scheme', desc: `${top} leads with ${money(curr.schemeMap[top].deposits)} in deposits across ${curr.schemeMap[top].accounts} account${curr.schemeMap[top].accounts === 1 ? '' : 's'} this period.`, action: 'scheme', actionLabel: 'View scheme analysis' });
     }
 
     if (insights.length === 0) insights.push({ type: 'blue', title: 'No Alerts', desc: 'All metrics are within normal range. Open filters to analyse a specific period or scheme.' });
@@ -2728,6 +2759,17 @@ function buildInsights(curr, prev, allEntries, from, to) {
 }
 
 let _insightsDrillData = null;
+
+window.openInsightAction = function(action) {
+    if (action === 'pipeline') {
+        switchTab('register');
+        setTimeout(() => window.setLedgerView?.('board'), 0);
+    } else if (action === 'td') {
+        switchTab('bill');
+    } else if (action === 'scheme') {
+        document.getElementById('is-scheme-drill-btn')?.click();
+    }
+};
 
 window.openSchemeDrillModal = function() {
     const modal = document.getElementById('is-drill-modal');
@@ -2771,13 +2813,17 @@ function buildSchemeDrillModal(schemeMap, entries) {
 }
 
 window.runInsightsStudio = function() {
-    const { from, to } = getInsightsDateRange();
+    const range = getInsightsDateRange();
+    if (!range) return showToast('The start date must be on or before the end date.');
+    const { from, to } = range;
     const mode = document.getElementById('is-compare-mode')?.value || 'prev_period';
     const schemeFilter = document.getElementById('is-scheme-filter')?.value || 'All';
+    const pipelineScope = document.getElementById('is-pipeline-scope')?.value || 'backlog';
+    syncInsightsReportRange(from, to);
 
-    const curr = getDataForRange(from, to, schemeFilter);
+    const curr = getDataForRange(from, to, schemeFilter, pipelineScope);
     const compRange = getCompareRange(from, to, mode);
-    const prev = compRange ? getDataForRange(compRange.from, compRange.to, schemeFilter) : null;
+    const prev = compRange ? getDataForRange(compRange.from, compRange.to, schemeFilter, pipelineScope) : null;
 
     window._insightsCurrentData = curr;
 
@@ -2828,7 +2874,9 @@ window.runInsightsStudio = function() {
 
     // Incentive stats
     const tdEntriesFull = curr.entries.filter(e => ['1Y TD','2Y TD','3Y TD','5Y TD'].includes(e.scheme));
-    const bestTdTerm = ['5Y TD','3Y TD','2Y TD','1Y TD'].find(t => curr.schemeMap[t]?.accounts > 0) || 'N/A';
+    const bestTdTerm = ['1Y TD','2Y TD','3Y TD','5Y TD']
+        .filter(t => curr.schemeMap[t]?.accounts > 0)
+        .sort((a, b) => curr.schemeMap[b].deposits - curr.schemeMap[a].deposits)[0] || 'N/A';
     const bestTdDeposits = curr.schemeMap[bestTdTerm]?.deposits || 0;
     const bestTdIncentive = getTdTermFromScheme(bestTdTerm) ? bestTdDeposits * (INCENTIVE_RATES[getTdTermFromScheme(bestTdTerm)] || 0) : 0;
     const avgIncentive = tdEntriesFull.length ? curr.tdIncentive / tdEntriesFull.length : 0;
@@ -2847,17 +2895,18 @@ window.runInsightsStudio = function() {
       <div class="is-pipeline-cell is-pipeline-delivered"><div class="is-pipeline-cell-label">Delivered</div><div class="is-pipeline-cell-value">${curr.delivered}</div></div>
     `;
     const today = getLocalISODate();
-    const atBOList = memAccReg.filter(e => e.pbStatus === 'At BO' && e.date);
+    const atBOList = curr.pipelineEntries.filter(e => e.pbStatus === 'At BO' && e.date);
     const avgDays = atBOList.length ? (atBOList.reduce((s,e) => s + Math.round((new Date(today) - new Date(e.date)) / 86400000), 0) / atBOList.length).toFixed(1) : 0;
     const oldest = atBOList.length ? Math.max(...atBOList.map(e => Math.round((new Date(today) - new Date(e.date)) / 86400000))) : 0;
-    document.getElementById('is-pipeline-meta').innerHTML = `<span>Avg Time at BO: <b>${avgDays} days</b></span><span>Oldest pending: <b>${oldest} days</b></span><span>Total in registry: <b>${memAccReg.length}</b></span>`;
+    const scopeLabel = pipelineScope === 'period' ? 'selected period' : 'current backlog';
+    document.getElementById('is-pipeline-meta').innerHTML = `<span>Scope: <b>${scopeLabel}</b></span><span>Avg Time at BO: <b>${avgDays} days</b></span><span>Oldest pending: <b>${oldest} days</b></span><span>Total: <b>${curr.pipelineEntries.length}</b></span>`;
 
     // Operational insights
     const insightItems = buildInsights(curr, prev, memAccReg, from, to);
     document.getElementById('is-insights-list').innerHTML = insightItems.map(item => `
       <div class="is-insight-item is-insight-${item.type}">
         <div class="is-insight-icon">${item.type === 'green' ? '🟢' : item.type === 'yellow' ? '🟡' : item.type === 'blue' ? '🔵' : '🔴'}</div>
-        <div class="is-insight-body"><div class="is-insight-title">${escapeHTML(item.title)}</div><div class="is-insight-desc">${escapeHTML(item.desc)}</div></div>
+        <div class="is-insight-body"><div class="is-insight-title">${escapeHTML(item.title)}</div><div class="is-insight-desc">${escapeHTML(item.desc)}</div>${item.action ? `<button type="button" class="is-insight-action" onclick="openInsightAction('${item.action}')">${escapeHTML(item.actionLabel)}</button>` : ''}</div>
       </div>`).join('');
 
     lucide.createIcons();
@@ -2866,11 +2915,24 @@ window.runInsightsStudio = function() {
 window.previewCustomReport = function() {
     const from = document.getElementById('crb-from')?.value;
     const to = document.getElementById('crb-to')?.value;
-    if (!from || !to) { showToast('Please select a date range first.'); return; }
+    if (!from || !to || from > to) { showToast('Choose a valid date range first.'); return; }
     document.getElementById('is-from').value = from;
     document.getElementById('is-to').value = to;
+    const scheme = document.getElementById('crb-scheme')?.value || 'All';
+    document.getElementById('is-scheme-filter').value = scheme;
     window.runInsightsStudio();
-    showToast('Report refreshed with selected date range.');
+    showToast(`Preview updated for ${scheme === 'All' ? 'all schemes' : scheme}.`);
+};
+
+window.exportCustomReport = function() {
+    const from = document.getElementById('crb-from')?.value;
+    const to = document.getElementById('crb-to')?.value;
+    if (!from || !to || from > to) return showToast('Choose a valid date range first.');
+    document.getElementById('is-from').value = from;
+    document.getElementById('is-to').value = to;
+    document.getElementById('is-scheme-filter').value = document.getElementById('crb-scheme')?.value || 'All';
+    window.runInsightsStudio();
+    window.generateUnifiedMasterReport();
 };
 
 function initInsightsStudioFilters() {
@@ -3378,9 +3440,12 @@ window.generateUnifiedMasterReport = async function() {
     const end = document.getElementById('rep-end')?.value;
     if (!start || !end) return alert('Select a date range first.');
     if (start > end) return alert('The report start date must be before the end date.');
-    const cb = memCbData.filter(entry => entry.date >= start && entry.date <= end).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const ledger = memAccReg.filter(entry => entry.date >= start && entry.date <= end).sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const tdEntries = memTdEntries.filter(entry => !entry.openDate || (entry.openDate >= start && entry.openDate <= end));
+    const selectedScheme = document.getElementById('is-scheme-filter')?.value || 'All';
+    // Cashbook rows are not scheme-tagged. Exclude them from a scheme-specific report
+    // instead of presenting branch-wide cash as if it belonged to that scheme.
+    const cb = (selectedScheme === 'All' ? memCbData : []).filter(entry => entry.date >= start && entry.date <= end).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const ledger = memAccReg.filter(entry => entry.date >= start && entry.date <= end && (selectedScheme === 'All' || entry.scheme === selectedScheme)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const tdEntries = memTdEntries.filter(entry => (!entry.openDate || (entry.openDate >= start && entry.openDate <= end)) && (selectedScheme === 'All' || `${entry.term}Y TD` === selectedScheme));
     const overrides = Object.entries(memOverrides).filter(([date]) => date >= start && date <= end).sort((a, b) => a[0].localeCompare(b[0]));
     const audit = memAuditLog.filter(item => String(item.at || '').slice(0, 10) >= start && String(item.at || '').slice(0, 10) <= end).slice(0, 100);
     const wrapper = document.createElement('div');
@@ -3414,7 +3479,7 @@ window.generateUnifiedMasterReport = async function() {
     wrapper.innerHTML = `
       <section class="master-cover">
         <div><div class="master-eyebrow">India Post · Branch Operations</div><h1>Unified Master Report</h1><p>Operational performance, financial controls and service delivery record</p></div>
-        <div class="master-cover-meta"><strong>${safe(globalBoName)}</strong><span>${start} to ${end}</span><span>Generated ${new Date().toLocaleString('en-IN')}</span></div>
+        <div class="master-cover-meta"><strong>${safe(globalBoName)}</strong><span>${start} to ${end}</span><span>${selectedScheme === 'All' ? 'All schemes' : `${safe(selectedScheme)} only`}</span><span>Generated ${new Date().toLocaleString('en-IN')}</span></div>
       </section>
       <section class="master-section master-kpi-section">
         <div class="master-section-heading"><span>01</span><div><h2>Executive KPI Snapshot</h2><p>Branch performance at a glance for the selected reporting window.</p></div></div>
