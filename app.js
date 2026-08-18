@@ -6,7 +6,8 @@ Chart.defaults.font.family = 'Inter';
 localforage.config({ name: 'BPMDeskDatabaseV3', storeName: 'bpmdata' });
 
 // Global Variables
-let memCbData = [], memCbStates = {}, memTallyHist = [], memTdEntries = [], memTdHist = [], memAccReg = [], memOverrides = {}, memSettings = {};
+let memCbData = [], memCbStates = {}, memTallyHist = [], memTdEntries = [], memTdHist = [], memAccReg = [], memOverrides = {}, memSettings = {}, memStampInventory = [];
+let cashBalanceIndex = null;
 let globalBoName = 'My Branch Office', globalBpmName = '', globalSpoName = '', globalHoName = '';
 let memHolidayDates = [];
 let memHolidayNames = {};
@@ -84,7 +85,8 @@ window.openTreasuryEntryEditor = openTreasuryEntryEditor;
 function createExportFilename(moduleName, extension = '') {
     const safeName = String(moduleName || 'Report').trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'Report';
     const date = new Date().toISOString().slice(0, 10);
-    const randomValue = window.crypto?.getRandomValues ? window.crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 0xffffffff);
+    if (!window.crypto?.getRandomValues) throw new Error('Secure random number generation is unavailable in this browser.');
+    const randomValue = window.crypto.getRandomValues(new Uint32Array(1))[0];
     const serial = String((randomValue % 900000) + 100000);
     const suffix = String(extension || '').replace(/^\./, '');
     return `DakDesk_${safeName}_${date}_SR-${serial}${suffix ? `.${suffix}` : ''}`;
@@ -93,6 +95,10 @@ function createCashEntryId() {
     // Date.now() alone can collide when entries are added quickly (for example via keyboard shortcuts).
     cashEntrySequence = (cashEntrySequence + 1) % 1000;
     return Date.now() * 1000 + cashEntrySequence;
+}
+function createSecureId() {
+    if (!window.crypto?.getRandomValues) throw new Error('Secure random number generation is unavailable in this browser.');
+    return `${Date.now().toString(36)}-${window.crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
 }
 
 function printModule(moduleName, printClass) {
@@ -116,8 +122,8 @@ function printModule(moduleName, printClass) {
     window.setTimeout(cleanup, 5 * 60 * 1000);
 }
 function showToast(msg) { const t = document.getElementById('toastMsg'); document.getElementById('toastText').textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 4000); }
-async function addAudit(action, module, details = '') { memAuditLog.unshift({ id: Date.now()+Math.random(), at: new Date().toISOString(), action, module, details }); if(memAuditLog.length>1000) memAuditLog.length=1000; await localforage.setItem('auditTrailV1',memAuditLog); }
-async function moveToRecycle(type, data, description) { memRecycleBin.unshift({id:Date.now()+Math.random(),type,data:JSON.parse(JSON.stringify(data)),description,deletedAt:new Date().toISOString()}); if(memRecycleBin.length>200) memRecycleBin.length=200; await localforage.setItem('recycleBinV1',memRecycleBin); await addAudit('Deleted',type,description); }
+async function addAudit(action, module, details = '') { memAuditLog.unshift({ id: createSecureId(), at: new Date().toISOString(), action, module, details }); if(memAuditLog.length>1000) memAuditLog.length=1000; await localforage.setItem('auditTrailV1',memAuditLog); }
+async function moveToRecycle(type, data, description) { memRecycleBin.unshift({id:createSecureId(),type,data:JSON.parse(JSON.stringify(data)),description,deletedAt:new Date().toISOString()}); if(memRecycleBin.length>200) memRecycleBin.length=200; await localforage.setItem('recycleBinV1',memRecycleBin); await addAudit('Deleted',type,description); }
 function toggleSidebar() { document.getElementById('app-sidebar').classList.toggle('collapsed'); }
 function toggleDark() { document.body.classList.toggle('dark'); }
 window.checkSunday = function(dateStr) { if (!dateStr) return; const reason = getClosedDayReason(dateStr); if (reason) showToast(`Treasury is closed on this date: ${reason}.`); }
@@ -175,9 +181,11 @@ window.exportModulePDF = async function(elementId, moduleName) {
 function switchTab(name){
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  document.getElementById('tab-'+name).classList.add('active'); 
+  const navigationTab = name === 'bill' ? 'register' : name;
+  const navigationButton = document.getElementById('tab-'+navigationTab);
+  navigationButton?.classList.add('active');
   document.getElementById('tab-panel-'+name).classList.add('active');
-  document.getElementById('topbarTitle').textContent = document.getElementById('tab-'+name).textContent.trim();
+  document.getElementById('topbarTitle').textContent = navigationButton?.textContent.trim() || '';
   
   if (name === 'dashboard') renderDashboard();
   if (name === 'cashbook') { loadCashBookDate(); checkTallyDate(); }
@@ -293,6 +301,7 @@ async function initApp() {
     memTdHist = await localforage.getItem('tdBillHistory') || [];
     memCbData = await localforage.getItem('cashBookDataV2') || [];
     memCbStates = await localforage.getItem('cashBookStatesV2') || {};
+    memStampInventory = await localforage.getItem('stampInventoryV1') || [];
     memTallyHist = await localforage.getItem('cashTallyHistory') || [];
     memOverrides = await localforage.getItem('manualOverridesV5') || {}; 
     globalBoName = await localforage.getItem('tdBillBoName') || 'My Branch Office';
@@ -308,6 +317,18 @@ async function initApp() {
     memClosingChecklists = await localforage.getItem('closingChecklistsV1') || {};
     
     let today = new Date(); let todayStr = getLocalISODate(today); let firstDay = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-01`;
+    // Preserve the latest legacy editable postage value as the starting stock for the new ledger.
+    if (!memStampInventory.length) {
+        const legacy = Object.entries(memCbStates).sort(([a], [b]) => a.localeCompare(b)).pop();
+        if (legacy?.[1]?.treasuryHoldings) {
+            const legacyHoldings = legacy[1].treasuryHoldings;
+            [['postage', 'Postage Stamps'], ['revenue', 'Revenue Stamps'], ['stationery', 'Postal Stationery']].forEach(([key, category]) => {
+                const amount = Number(legacyHoldings[key]) || 0;
+                if (amount > 0) memStampInventory.push({ id: createCashEntryId(), date: legacy[0], type: 'opening', category, item: 'Legacy opening balance', quantity: 1, amount, reference: 'Legacy stock migration', reason: `Closing stock carried from ${legacy[0]}`, postedAt: new Date().toISOString() });
+            });
+            if (memStampInventory.length) await localforage.setItem('stampInventoryV1', memStampInventory);
+        }
+    }
     document.getElementById("regDate").valueAsDate = today; document.getElementById("printDate").textContent = today.toLocaleDateString('en-IN');
     
     if(document.getElementById('rep-start')) document.getElementById('rep-start').value = firstDay;
@@ -1148,15 +1169,38 @@ window.removeBranchHoliday = async function(date) {
 // --------------------------------------------------------------------------------------
 // CASH BOOK LOGIC
 // --------------------------------------------------------------------------------------
+function invalidateCashBalanceIndex() { cashBalanceIndex = null; }
+function getCashBalanceIndex() {
+    if (cashBalanceIndex) return cashBalanceIndex;
+    const entriesByDate = new Map();
+    memCbData.forEach(entry => {
+        if (!entry.date) return;
+        const entries = entriesByDate.get(entry.date) || [];
+        entries.push(entry); entriesByDate.set(entry.date, entries);
+    });
+    const dates = [...new Set([...entriesByDate.keys(), ...Object.keys(memOverrides)])].sort();
+    const openingByDate = new Map(), closingByDate = new Map();
+    let running = 0;
+    dates.forEach(date => {
+        // An override replaces only this day's opening balance; the recalculated
+        // closing balance becomes the opening balance for every later day.
+        if (memOverrides[date] !== undefined) running = Number(memOverrides[date]) || 0;
+        openingByDate.set(date, running);
+        (entriesByDate.get(date) || []).sort((a, b) => Number(a.id) - Number(b.id)).forEach(entry => {
+            running += entry.type === 'receipt' ? Number(entry.amt) || 0 : -(Number(entry.amt) || 0);
+        });
+        closingByDate.set(date, running);
+    });
+    cashBalanceIndex = { dates, openingByDate, closingByDate };
+    return cashBalanceIndex;
+}
 function getOpeningBalance(targetDate) {
-    let dates = [...new Set(memCbData.map(d=>d.date)), ...Object.keys(memOverrides)].sort(); let run = 0;
-    for (let d of dates) {
-        if (d >= targetDate) break; if (memOverrides[d] !== undefined) run = memOverrides[d];
-        let dayData = memCbData.filter(x => x.date === d);
-        dayData.forEach(tx => { if (tx.type === 'receipt') run += tx.amt; else run -= tx.amt; });
-    }
-    if (memOverrides[targetDate] !== undefined) return memOverrides[targetDate];
-    return run;
+    if (!targetDate) return 0;
+    const index = getCashBalanceIndex();
+    if (index.openingByDate.has(targetDate)) return index.openingByDate.get(targetDate);
+    let priorDate = null;
+    for (const date of index.dates) { if (date >= targetDate) break; priorDate = date; }
+    return priorDate ? index.closingByDate.get(priorDate) : 0;
 }
 
 function initCashBook() {
@@ -1167,20 +1211,131 @@ function initCashBook() {
 }
 
 function getTreasuryHoldingValues(date, closingBalance) {
-    const holdings = memCbStates[date]?.treasuryHoldings || {};
     return {
         cash: Math.max(0, Number(closingBalance) || 0),
-        postage: Math.max(0, Number(holdings.postage) || 0),
-        revenue: Math.max(0, Number(holdings.revenue) || 0),
-        stationery: Math.max(0, Number(holdings.stationery) || 0)
+        postage: getStampStockBalance(date),
+        revenue: getInventoryCategoryBalance(date, 'Revenue Stamps'),
+        stationery: getInventoryCategoryBalance(date, 'Postal Stationery')
     };
 }
 
+function isStampSale(entry) {
+    return entry.type === 'receipt' && String(entry.desc || '').includes('[Stamp Sales]');
+}
+
+function getStampStockBalance(targetDate) {
+    return getInventoryCategoryBalance(targetDate, 'Postage Stamps');
+}
+
+function getInventoryCategoryBalance(targetDate, category) {
+    if (!targetDate) return 0;
+    const manualMovement = memStampInventory
+        .filter(movement => movement.date <= targetDate && (movement.category || 'Postage Stamps') === category)
+        .reduce((total, movement) => total + (movement.type === 'disposal' || movement.type === 'sale' ? -Number(movement.amount || 0) : Number(movement.amount || 0)), 0);
+    const sales = memCbData
+        .filter(entry => entry.date <= targetDate && isStampSale(entry) && !memStampInventory.some(movement => movement.sourceCashEntryId === entry.id) && (entry.stampIssue?.category || 'Postage Stamps') === category)
+        .reduce((total, entry) => total + Number(entry.amt || 0), 0);
+    return Math.max(0, manualMovement - sales);
+}
+
+function getInventoryItemBalance(targetDate, category, item) {
+    const normalItem = String(item || '').trim().toLowerCase();
+    const movementValue = memStampInventory.filter(movement => movement.date <= targetDate && (movement.category || 'Postage Stamps') === category && String(movement.item || 'General').trim().toLowerCase() === normalItem)
+        .reduce((total, movement) => total + (movement.type === 'disposal' || movement.type === 'sale' ? -Number(movement.amount || 0) : Number(movement.amount || 0)), 0);
+    const salesValue = memCbData.filter(entry => entry.date <= targetDate && isStampSale(entry) && !memStampInventory.some(movement => movement.sourceCashEntryId === entry.id) && (entry.stampIssue?.category || 'Postage Stamps') === category && String(entry.stampIssue?.item || 'General').trim().toLowerCase() === normalItem)
+        .reduce((total, entry) => total + Number(entry.amt || 0), 0);
+    return Math.max(0, movementValue - salesValue);
+}
+
+function getStampSalesForDate(date, category = null) {
+    return memCbData.filter(entry => entry.date === date && isStampSale(entry) && (!category || (entry.stampIssue?.category || 'Postage Stamps') === category))
+        .reduce((total, entry) => total + Number(entry.amt || 0), 0);
+}
+
+function renderStampInventory() {
+    const date = document.getElementById('cb-main-date')?.value;
+    if (!date) return;
+    const balance = getStampStockBalance(date);
+    const sales = getStampSalesForDate(date);
+    const movements = memStampInventory.filter(movement => movement.date === date);
+    const addTotal = movements.filter(movement => movement.type !== 'disposal' && movement.type !== 'sale').reduce((total, movement) => total + Number(movement.amount || 0), 0);
+    const disposalTotal = movements.filter(movement => movement.type === 'disposal' || movement.type === 'sale').reduce((total, movement) => total + Number(movement.amount || 0), 0);
+    const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+    setText('stamp-stock-closing', money(balance));
+    setText('stamp-stock-sales', money(sales));
+    setText('stamp-stock-added', money(addTotal));
+    setText('stamp-stock-disposed', money(disposalTotal));
+    const log = document.getElementById('stamp-stock-log');
+    if (log) {
+        const rows = [
+            ...movements.map(movement => ({ label: movement.type === 'sale' ? 'Stamp sale' : movement.type === 'disposal' ? 'Disposal' : movement.type === 'opening' ? 'Opening stock' : 'Stock received', amount: movement.amount, direction: movement.type === 'disposal' || movement.type === 'sale' ? 'out' : 'in', detail: `${movement.category || 'Postage Stamps'} · ${movement.item || 'General'} · ${movement.quantity || 1} units · ${movement.reference}` })),
+            ...memCbData.filter(entry => entry.date === date && isStampSale(entry) && !memStampInventory.some(movement => movement.sourceCashEntryId === entry.id)).map(entry => ({ label: 'Stamp sale', amount: entry.amt, direction: 'out', detail: `${entry.stampIssue?.category || 'Postage Stamps'} · ${entry.stampIssue?.item || 'General'} · ${entry.stampIssue?.quantity || 1} units` }))
+        ];
+        log.innerHTML = rows.length ? rows.map(row => `<div style="display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--border); font-size:.8rem;"><span><strong>${escapeHTML(row.label)}</strong><small style="display:block;color:var(--text-muted)">${escapeHTML(row.detail)}</small></span><strong style="color:${row.direction === 'out' ? 'var(--danger)' : 'var(--success)'}">${row.direction === 'out' ? '−' : '+'}${money(row.amount)}</strong></div>`).join('') : '<small style="color:var(--text-muted)">No stock movements recorded for this date.</small>';
+    }
+}
+
+window.openInventoryModal = function() {
+    const modal = document.getElementById('inventoryModal'); if (!modal) return;
+    ['inventory-action', 'inventory-category', 'inventory-item', 'inventory-qty', 'inventory-unit-value', 'inventory-reference', 'inventory-reason'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('inventory-action').value = 'add'; document.getElementById('inventory-category').value = 'Postage Stamps'; modal.style.display = 'flex';
+};
+window.closeInventoryModal = () => { document.getElementById('inventoryModal').style.display = 'none'; };
+window.resetAllStampStock = async function() {
+    const date = document.getElementById('cb-main-date')?.value;
+    const treasuryState = getTreasuryWorkflowState(date);
+    if (!date || treasuryState.closedReason || treasuryState.isSaved || treasuryState.isLocked) return alert('Open a working-day treasury before resetting stock.');
+    if (prompt('This records disposal entries for every available stamp and stationery item on this date. Type RESET STOCK to continue.') !== 'RESET STOCK') return;
+    const itemKeys = new Map();
+    const registerItem = (category, item) => {
+        const safeCategory = category || 'Postage Stamps', safeItem = String(item || 'General').trim() || 'General';
+        itemKeys.set(`${safeCategory}\u0000${safeItem.toLowerCase()}`, { category: safeCategory, item: safeItem });
+    };
+    memStampInventory.forEach(movement => registerItem(movement.category, movement.item));
+    memCbData.filter(isStampSale).forEach(entry => registerItem(entry.stampIssue?.category, entry.stampIssue?.item));
+    const adjustments = [];
+    itemKeys.forEach(({ category, item }) => {
+        const amount = getInventoryItemBalance(date, category, item);
+        if (amount > 0) adjustments.push({ id: createCashEntryId(), date, type: 'disposal', category, item, quantity: 1, amount, reference: 'Stock reset', reason: 'Full inventory reset to zero', postedAt: new Date().toISOString() });
+    });
+    if (!adjustments.length) return showToast('All inventory balances are already zero.');
+    memStampInventory.push(...adjustments);
+    await localforage.setItem('stampInventoryV1', memStampInventory);
+    await addAudit('Inventory reset', 'Inventory', `${adjustments.length} item balance(s) disposed to zero on ${date}`);
+    loadCashBookDate(); showToast('All available stamp and stationery stock has been reset to zero.');
+};
+window.saveInventoryMovement = async function() {
+    const date = document.getElementById('cb-main-date')?.value, type = document.getElementById('inventory-action').value, category = document.getElementById('inventory-category').value, item = document.getElementById('inventory-item').value.trim(), quantity = Number(document.getElementById('inventory-qty').value), unitValue = Number(document.getElementById('inventory-unit-value').value), reference = document.getElementById('inventory-reference').value.trim(), reason = document.getElementById('inventory-reason').value.trim(), amount = quantity * unitValue;
+    const treasuryState = getTreasuryWorkflowState(date);
+    if (treasuryState.closedReason || treasuryState.isSaved || treasuryState.isLocked) return alert('Open a working-day treasury before posting inventory movements.');
+    if (!item || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitValue) || unitValue <= 0 || !reference || !reason) return alert('Select an item and enter quantity, unit value, reference, and remarks.');
+    if (type === 'disposal') { if (amount > getInventoryItemBalance(date, category, item)) return alert(`Cannot dispose ${money(amount)}. Available ${item} stock is ${money(getInventoryItemBalance(date, category, item))}.`); if (prompt('Type DISPOSE to confirm this stock disposal.') !== 'DISPOSE') return; }
+    memStampInventory.push({ id: createCashEntryId(), date, type, category, item, quantity, amount, reference, reason, postedAt: new Date().toISOString() });
+    await localforage.setItem('stampInventoryV1', memStampInventory); await addAudit(type === 'disposal' ? 'Inventory disposed' : 'Inventory added', 'Inventory', `${category}: ${item}, ${quantity} units / ${money(amount)} · ${reference}`);
+    closeInventoryModal(); loadCashBookDate(); showToast(type === 'disposal' ? 'Inventory disposal recorded.' : 'Inventory receipt recorded.');
+};
+window.openStampSaleModal = function() {
+    const amount = Number(document.getElementById('cb-rec-amt')?.value); if (!Number.isFinite(amount) || amount <= 0) return alert('Enter the stamp-sale amount before selecting stock.');
+    document.getElementById('stamp-sale-category').value = 'Postage Stamps'; document.getElementById('stamp-sale-item').value = ''; document.getElementById('stamp-sale-qty').value = ''; document.getElementById('stamp-sale-amount').textContent = money(amount); document.getElementById('stampSaleModal').style.display = 'flex';
+};
+window.closeStampSaleModal = () => { document.getElementById('stampSaleModal').style.display = 'none'; };
+window.confirmStampSale = async function() {
+    const date = document.getElementById('cb-main-date').value, amt = Number(document.getElementById('cb-rec-amt').value), category = document.getElementById('stamp-sale-category').value, item = document.getElementById('stamp-sale-item').value.trim(), quantity = Number(document.getElementById('stamp-sale-qty').value), descRaw = document.getElementById('cb-rec-desc').value.trim();
+    if (!item || !Number.isFinite(quantity) || quantity <= 0) return alert('Select the stamp/stationery item and quantity issued.');
+    if (amt > getInventoryItemBalance(date, category, item)) return alert(`Insufficient ${item} inventory. Available: ${money(getInventoryItemBalance(date, category, item))}.`);
+    const desc = descRaw ? `[Stamp Sales] ${descRaw}` : '[Stamp Sales]'; const id = createCashEntryId();
+    memCbData.push({ id, date, desc, type: 'receipt', amt, stampIssue: { category, item, quantity } });
+    memStampInventory.push({ id: createCashEntryId(), sourceCashEntryId: id, date, type: 'sale', category, item, quantity, amount: amt, reference: `Cash book entry ${id}`, reason: 'Stamp sale', postedAt: new Date().toISOString() });
+    invalidateCashBalanceIndex();
+    await localforage.setItem('cashBookDataV2', memCbData); await localforage.setItem('stampInventoryV1', memStampInventory); await addAudit('Stamp sale posted', 'Inventory', `${category}: ${item}, ${quantity} units / ${money(amt)} deducted on ${date}`);
+    document.getElementById('cb-rec-desc').value = ''; document.getElementById('cb-rec-amt').value = ''; closeStampSaleModal(); loadCashBookDate();
+};
+
 function updateTreasurySummary() {
     const cash = Math.max(0, Number(document.getElementById('cb-treasury-cash')?.value) || 0);
-    const postage = Math.max(0, Number(document.getElementById('cb-treasury-postage')?.value) || 0);
-    const revenue = Math.max(0, Number(document.getElementById('cb-treasury-revenue')?.value) || 0);
-    const stationery = Math.max(0, Number(document.getElementById('cb-treasury-stationery')?.value) || 0);
+    const postage = getStampStockBalance(document.getElementById('cb-main-date')?.value);
+    const revenue = getInventoryCategoryBalance(document.getElementById('cb-main-date')?.value, 'Revenue Stamps');
+    const stationery = getInventoryCategoryBalance(document.getElementById('cb-main-date')?.value, 'Postal Stationery');
     const totalEl = document.getElementById('cb-treasury-total');
     if (totalEl) totalEl.textContent = money(cash + postage + revenue + stationery);
     renderTreasuryReconciliation();
@@ -1192,8 +1347,7 @@ function renderTreasuryReconciliation() {
     const notes = [500,200,100,50,20,10,5,2,1];
     const physicalCash = notes.reduce((sum, denom) => sum + (Number(document.getElementById(`c-${denom}`)?.value) || 0) * denom, 0);
     const hasPhysicalTally = notes.some(denom => Number(document.getElementById(`c-${denom}`)?.value) > 0) || Boolean(memTallyHist.find(t => t.date === date));
-    const stockValue = ['cb-treasury-postage', 'cb-treasury-revenue', 'cb-treasury-stationery']
-        .reduce((sum, id) => sum + Math.max(0, Number(document.getElementById(id)?.value) || 0), 0);
+    const stockValue = getInventoryCategoryBalance(date, 'Postage Stamps') + getInventoryCategoryBalance(date, 'Revenue Stamps') + getInventoryCategoryBalance(date, 'Postal Stationery');
     const remittance = memCbData
         .filter(entry => entry.date === date && entry.type === 'payment' && String(entry.desc || '').includes('[Remittance to AO]'))
         .reduce((sum, entry) => sum + (Number(entry.amt) || 0), 0);
@@ -1232,7 +1386,6 @@ function queueTreasurySave() {
         if (!date) return;
         if (!memCbStates[date]) memCbStates[date] = {};
         memCbStates[date].treasuryHoldings = {
-            postage: Math.max(0, Number(document.getElementById('cb-treasury-postage')?.value) || 0),
             revenue: Math.max(0, Number(document.getElementById('cb-treasury-revenue')?.value) || 0),
             stationery: Math.max(0, Number(document.getElementById('cb-treasury-stationery')?.value) || 0)
         };
@@ -1263,7 +1416,7 @@ function loadCashBookDate() {
     document.getElementById('cb-op-bal').textContent = money(opBal); document.getElementById('cb-tot-rec').textContent = money(totRec); document.getElementById('cb-tot-pay').textContent = money(totPay); document.getElementById('cb-cur-bal').textContent = money(running);
     const searchTerm = (document.getElementById('cb-search')?.value || '').trim().toLowerCase();
     const visibleEntries = searchTerm ? todayEntries.filter(d => String(d.desc || '').toLowerCase().includes(searchTerm)) : todayEntries;
-    document.getElementById('cb-table-body').innerHTML = visibleEntries.map(d => `<tr><td style="text-align:left;">${escapeHTML(d.desc)}</td><td class="text-right text-success">${d.type==='receipt'?money(d.amt):'-'}</td><td class="text-right text-danger">${d.type==='payment'?money(d.amt):'-'}</td><td class="text-right" style="font-weight:600;">${money(d.balance)}</td><td class="no-print text-right">${treasuryState.isSaved || treasuryState.isLocked ? '' : `<button class="btn-icon" onclick="deleteCbRow(${d.id})"><i data-lucide="x"></i></button>`}</td></tr>`).join('') || '<tr><td colspan="5" class="text-center" style="padding:24px; color:var(--text-muted);">No matching entries.</td></tr>';
+    document.getElementById('cb-table-body').innerHTML = visibleEntries.map(d => { const entryId = Number(d.id); const deleteButton = !treasuryState.isSaved && !treasuryState.isLocked && Number.isSafeInteger(entryId) ? `<button class="btn-icon" onclick="deleteCbRow(${entryId})"><i data-lucide="x"></i></button>` : ''; return `<tr><td style="text-align:left;">${escapeHTML(d.desc)}</td><td class="text-right text-success">${d.type==='receipt' ? money(d.amt) : '-'}</td><td class="text-right text-danger">${d.type==='payment' ? money(d.amt) : '-'}</td><td class="text-right" style="font-weight:600;">${money(d.balance)}</td><td class="no-print text-right">${deleteButton}</td></tr>`; }).join('') || '<tr><td colspan="5" class="text-center" style="padding:24px; color:var(--text-muted);">No matching entries.</td></tr>';
     lucide.createIcons();
 
     const treasuryHeroOpen = document.getElementById('treasury-hero-open');
@@ -1279,13 +1432,16 @@ function loadCashBookDate() {
     const physicalCash = savedTally?.total ?? [500,200,100,50,20,10,5,2,1].reduce((sum, denom) => sum + (Number(document.getElementById(`c-${denom}`)?.value || 0) * denom), 0);
     const holdings = getTreasuryHoldingValues(selectedDate, running);
     document.getElementById('cb-treasury-cash').value = holdings.cash;
-    document.getElementById('cb-treasury-postage').value = holdings.postage || '';
     document.getElementById('cb-treasury-revenue').value = holdings.revenue || '';
     document.getElementById('cb-treasury-stationery').value = holdings.stationery || '';
-    ['cb-treasury-postage', 'cb-treasury-revenue', 'cb-treasury-stationery'].forEach(id => {
+    ['cb-treasury-revenue', 'cb-treasury-stationery'].forEach(id => {
         const input = document.getElementById(id);
         if (input) input.disabled = treasuryState.isHoliday || treasuryState.isSaved || treasuryState.isLocked;
     });
+    document.querySelectorAll('#stamp-inventory-controls input, #stamp-inventory-controls button').forEach(control => {
+        control.disabled = treasuryState.isHoliday || treasuryState.isSaved || treasuryState.isLocked;
+    });
+    renderStampInventory();
     updateTreasurySummary();
     if (treasuryHeroOpen) treasuryHeroOpen.textContent = money(opBal);
     if (treasuryHeroClose) treasuryHeroClose.textContent = money(running);
@@ -1341,17 +1497,18 @@ async function confirmCashVerification() { let selectedDate = document.getElemen
 function openOverrideModal() { document.getElementById('override-date').textContent = document.getElementById('cb-main-date').value; document.getElementById('override-input').value = ''; document.getElementById('override-confirm').value = ''; document.getElementById('override-save-btn').disabled = true; document.getElementById('overrideModal').style.display = 'flex'; }
 function closeOverrideModal() { document.getElementById('overrideModal').style.display = 'none'; }
 function checkOverrideConfirm() { document.getElementById('override-save-btn').disabled = (document.getElementById('override-confirm').value !== 'OVERRIDE'); }
-async function saveOverride() { const d = document.getElementById('cb-main-date').value; const raw = document.getElementById('override-input').value.trim(); const amt = Number(raw); if (!d || raw === '' || !Number.isFinite(amt) || amt < 0) return alert("Enter a valid non-negative opening balance."); memOverrides[d] = amt; await localforage.setItem('manualOverridesV5', memOverrides); document.getElementById('overrideModal').style.display = 'none'; showToast("⚠️ Opening Balance Mathematically Overridden."); loadCashBookDate(); }
+async function saveOverride() { const d = document.getElementById('cb-main-date').value; const raw = document.getElementById('override-input').value.trim(); const amt = Number(raw); if (!d || raw === '' || !Number.isFinite(amt) || amt < 0) return alert("Enter a valid non-negative opening balance."); memOverrides[d] = amt; invalidateCashBalanceIndex(); await localforage.setItem('manualOverridesV5', memOverrides); document.getElementById('overrideModal').style.display = 'none'; showToast("⚠️ Opening Balance Mathematically Overridden."); loadCashBookDate(); }
 async function addCashBookEntry(type) {
     const date = document.getElementById('cb-main-date').value; const scheme = document.getElementById(`cb-${type.substring(0,3)}-scheme`).value; const descRaw = document.getElementById(`cb-${type.substring(0,3)}-desc`).value.trim(); const amt = Number(document.getElementById(`cb-${type.substring(0,3)}-amt`).value);
     const treasuryState = getTreasuryWorkflowState(date);
     if (treasuryState.closedReason) return alert(`No treasury transactions are allowed on ${treasuryState.closedReason}.`);
     if (treasuryState.isSaved || treasuryState.isLocked) return alert('Treasury is closed for the day. Re-open it before adding entries.');
     if(!date || !Number.isFinite(amt) || amt <= 0) return alert("Enter an amount greater than zero.");
+    if (type === 'receipt' && scheme === 'Stamp Sales') return openStampSaleModal();
     const desc = scheme.includes('General') ? (descRaw || 'Other') : (descRaw ? `[${scheme}] ${descRaw}` : `[${scheme}]`);
-    memCbData.push({ id: createCashEntryId(), date, desc, type, amt }); await localforage.setItem('cashBookDataV2', memCbData); document.getElementById(`cb-${type.substring(0,3)}-desc`).value = ''; document.getElementById(`cb-${type.substring(0,3)}-amt`).value = ''; loadCashBookDate();
+    memCbData.push({ id: createCashEntryId(), date, desc, type, amt }); invalidateCashBalanceIndex(); await localforage.setItem('cashBookDataV2', memCbData); if (scheme === 'Stamp Sales') await addAudit('Stamp sale posted', 'Stamp Inventory', `${money(amt)} automatically deducted from stamp stock on ${date}`); document.getElementById(`cb-${type.substring(0,3)}-desc`).value = ''; document.getElementById(`cb-${type.substring(0,3)}-amt`).value = ''; loadCashBookDate();
 }
-async function deleteCbRow(id) { const date = document.getElementById('cb-main-date').value; if (getTreasuryWorkflowState(date).isSaved) return alert('Treasury is closed for the day. Re-open it before deleting entries.'); if(confirm("Delete this entry?")) { memCbData = memCbData.filter(d => d.id !== id); await localforage.setItem('cashBookDataV2', memCbData); loadCashBookDate(); } }
+async function deleteCbRow(id) { const date = document.getElementById('cb-main-date').value; if (getTreasuryWorkflowState(date).isSaved) return alert('Treasury is closed for the day. Re-open it before deleting entries.'); if(confirm("Delete this entry?")) { const deleted = memCbData.find(d => d.id === id); memCbData = memCbData.filter(d => d.id !== id); const removedSales = memStampInventory.filter(movement => movement.sourceCashEntryId === id); if (removedSales.length) memStampInventory = memStampInventory.filter(movement => movement.sourceCashEntryId !== id); invalidateCashBalanceIndex(); await localforage.setItem('cashBookDataV2', memCbData); if (removedSales.length) { await localforage.setItem('stampInventoryV1', memStampInventory); await addAudit('Stamp sale reversed', 'Inventory', `${money(deleted?.amt || 0)} restored after cash book deletion`); } loadCashBookDate(); } }
 async function saveCashBookDate() { let date = document.getElementById('cb-main-date').value; const treasuryState = getTreasuryWorkflowState(date); if (treasuryState.closedReason) return alert(`No treasury transactions are allowed on ${treasuryState.closedReason}.`); let closeBal = Number(document.getElementById('cb-cur-bal').textContent.replace(/[^\d.-]/g, '')); if (!memCbStates[date]) memCbStates[date] = {}; memCbStates[date].saved = true; memCbStates[date].closingBalance = closeBal; await localforage.setItem('cashBookStatesV2', memCbStates); loadCashBookDate(); openCashTallyMenu(); }
 async function modifyCashBookDate() { let date = document.getElementById('cb-main-date').value; if(memCbStates[date]?.tallyLocked) return alert("Cannot re-open Treasury. Unlock tally first."); if(memCbStates[date]) { memCbStates[date].saved = false; await localforage.setItem('cashBookStatesV2', memCbStates); } loadCashBookDate(); }
 
@@ -1425,9 +1582,9 @@ function printBoda() {
     const hasPhysicalTally = Boolean(tally) || denominations.some(denom => Number(document.getElementById(`c-${denom}`)?.value) > 0);
     const physicalCash = tally?.total ?? enteredPhysicalCash;
     const closingCash = Number(clBal.replace(/[^\d.-]/g, '')) || 0;
-    const postage = Math.max(0, Number(document.getElementById('cb-treasury-postage')?.value) || 0);
-    const revenue = Math.max(0, Number(document.getElementById('cb-treasury-revenue')?.value) || 0);
-    const stationery = Math.max(0, Number(document.getElementById('cb-treasury-stationery')?.value) || 0);
+    const postage = getStampStockBalance(d);
+    const revenue = getInventoryCategoryBalance(d, 'Revenue Stamps');
+    const stationery = getInventoryCategoryBalance(d, 'Postal Stationery');
     const stockValue = postage + revenue + stationery;
     const remittance = todayCb.filter(entry => entry.type === 'payment' && String(entry.desc || '').includes('[Remittance to AO]'))
         .reduce((sum, entry) => sum + (Number(entry.amt) || 0), 0);
@@ -1511,6 +1668,8 @@ function compareTdBillEntries(a, b) {
     if (!dateA && dateB) return 1;
     const prDiff = (parseInt(a.prNo) || 99999) - (parseInt(b.prNo) || 99999);
     if (prDiff !== 0) return prDiff;
+    const termDiff = (parseInt(a.term) || 99999) - (parseInt(b.term) || 99999);
+    if (termDiff !== 0) return termDiff;
     return String(a.accNo || '').localeCompare(String(b.accNo || ''));
 }
 
@@ -1759,7 +1918,7 @@ window.renderRegBadges = function() {
 };
 
 async function addRegEntry() {
-    const date = document.getElementById('regDate').value; const name = document.getElementById('regName').value.trim(); const relationName = document.getElementById('regRelationName').value.trim(); const scheme = document.getElementById('regScheme').value; const amt = Number(document.getElementById('regAmount').value); const remarks = document.getElementById('regRemarks').value.trim();
+    const date = document.getElementById('regDate').value; const name = document.getElementById('regName').value.trim(); const relationName = document.getElementById('regRelationName').value.trim(); const village = document.getElementById('regVillage').value.trim(); const postOffice = document.getElementById('regPostOffice').value.trim(); const pincode = document.getElementById('regPincode').value.trim(); const scheme = document.getElementById('regScheme').value; const amt = Number(document.getElementById('regAmount').value); const remarks = document.getElementById('regRemarks').value.trim();
     let prNoRaw = document.getElementById('regPr').value.trim(); let accRaw = activeRegIds.acc || ''; let cif = activeRegIds.cif || ''; let phone = activeRegIds.phone || ''; let aadhaar = activeRegIds.aadhaar || ''; let pan = activeRegIds.pan || '';
     
     let prNo = prNoRaw ? parseInt(prNoRaw) : getLedgerNextPrNo();
@@ -1770,10 +1929,11 @@ async function addRegEntry() {
     let acc = accRaw; 
     if(!acc && !phone && !cif && !aadhaar && !pan) return alert("Please enter at least an Account Number, Phone, CIF, Aadhaar or PAN."); 
     if(!name) return alert("Please enter the customer's name."); if(!amt) return alert("Please enter the deposit amount.");
+    if(pincode && !/^\d{6}$/.test(pincode)) return alert("PIN Code must be exactly 6 digits.");
     if(acc && memAccReg.some(r => r.acc === acc)) return alert("Duplicate Error: This Account Number already exists.");
     
     let pbStatus = 'N/A'; if(scheme.includes('TD') || scheme === 'SSA' || scheme === 'SB' || scheme === 'RD') pbStatus = 'Pending AO';
-    memAccReg.unshift({date, acc, cif, phone, aadhaar, pan, prNo, name, relationName, scheme, amt, pbStatus, remarks});
+    memAccReg.unshift({date, acc, cif, phone, aadhaar, pan, prNo, name, relationName, village, postOffice, pincode, scheme, amt, pbStatus, remarks});
     clearLedgerSelection(false);
     await localforage.setItem('accRegister', memAccReg); 
     showToast("✅ Account Logged Successfully");
@@ -1782,7 +1942,7 @@ async function addRegEntry() {
     
     setTimeout(() => { const container = document.querySelector('#tab-panel-register .table-container'); if (container) container.scrollTop = container.scrollHeight; }, 100);
     
-    activeRegIds = { acc: '', phone: '', cif: '', aadhaar: '', pan: '' }; renderRegBadges(); document.getElementById('regIdValue').value=''; document.getElementById('regPr').value=getLedgerNextPrNo(); document.getElementById('regName').value=''; document.getElementById('regRelationName').value=''; document.getElementById('regAmount').value=''; document.getElementById('regRemarks').value='';
+    activeRegIds = { acc: '', phone: '', cif: '', aadhaar: '', pan: '' }; renderRegBadges(); document.getElementById('regIdValue').value=''; document.getElementById('regPr').value=getLedgerNextPrNo(); document.getElementById('regName').value=''; document.getElementById('regRelationName').value=''; document.getElementById('regVillage').value=''; document.getElementById('regPostOffice').value=''; document.getElementById('regPincode').value=''; document.getElementById('regAmount').value=''; document.getElementById('regRemarks').value='';
 }
 
 window.updateRegPbStatus = async function(i, val) { 
@@ -2287,7 +2447,7 @@ function updateLedgerStats() {
 window.exportLedgerExcel = function() {
     if(memAccReg.length === 0) return alert("No data to export.");
     let sortedData = [...memAccReg].sort((a, b) => { let dateDiff = new Date(a.date) - new Date(b.date); if (dateDiff !== 0) return dateDiff; let prA = parseInt(a.prNo) || 99999; let prB = parseInt(b.prNo) || 99999; return prA - prB; });
-    const exportData = sortedData.map((e, index) => ({ "Sr No": index + 1, "Date": e.date, "Name": e.name, "Account No": e.acc || '', "CIF": e.cif || '', "Phone": e.phone || '', "Aadhaar": e.aadhaar || '', "PAN": e.pan || '', "Scheme": e.scheme, "Deposit Amount": e.amt, "PR No": e.prNo || '', "Passbook Status": e.pbStatus, "Remarks": e.remarks || '' }));
+    const exportData = sortedData.map((e, index) => ({ "Sr No": index + 1, "Date": e.date, "Name": e.name, "Account No": e.acc || '', "CIF": e.cif || '', "Phone": e.phone || '', "Aadhaar": e.aadhaar || '', "PAN": e.pan || '', "Village / Locality": e.village || '', "Post Office": e.postOffice || '', "PIN Code": e.pincode || '', "Scheme": e.scheme, "Deposit Amount": e.amt, "PR No": e.prNo || '', "Passbook Status": e.pbStatus, "Remarks": e.remarks || '' }));
     const worksheet = XLSX.utils.json_to_sheet(exportData); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Ledger"); XLSX.writeFile(workbook, createExportFilename('Smart_Ledger_Account_Export', 'xlsx'));
 };
 
@@ -2333,6 +2493,9 @@ function openLedgerEditModal(i) {
     setValue('ledgerModPan', e.pan || '');
     setValue('ledgerModName', e.name);
     setValue('ledgerModRelationName', e.relationName || '');
+    setValue('ledgerModVillage', e.village || '');
+    setValue('ledgerModPostOffice', e.postOffice || '');
+    setValue('ledgerModPincode', e.pincode || '');
     setValue('ledgerModAmount', e.amt);
     setValue('ledgerModPbStatus', e.pbStatus || 'N/A');
     setValue('ledgerModRemarks', e.remarks || '');
@@ -2349,8 +2512,9 @@ async function saveEditedLedgerEntry() {
     if (accRaw.length > 0 && accRaw.length !== 12) { return alert("Account number must be exactly 12 digits."); }
     if(accRaw && memAccReg.some((r, idx) => r.acc === accRaw && idx !== currentEditIndex)) { return alert("Duplicate Error: This Account Number already exists in another entry."); }
     const name = readValue('ledgerModName').trim(); if(!name) return alert("Customer name is required.");
+    const pincode = readValue('ledgerModPincode').trim(); if(pincode && !/^\d{6}$/.test(pincode)) return alert("PIN Code must be exactly 6 digits.");
     
-    memAccReg[currentEditIndex] = { date: readValue('ledgerModDate'), scheme: scheme, prNo: prNo, acc: accRaw, phone: readValue('ledgerModPhone').trim(), cif: readValue('ledgerModCif').trim(), aadhaar: readValue('ledgerModAadhaar').replace(/[^0-9]/g, ''), pan: readValue('ledgerModPan').toUpperCase().replace(/[^A-Z0-9]/g, ''), name: name, relationName: readValue('ledgerModRelationName').trim(), amt: Number(readValue('ledgerModAmount')), pbStatus: readValue('ledgerModPbStatus') || 'N/A', remarks: readValue('ledgerModRemarks').trim() };
+    memAccReg[currentEditIndex] = { ...memAccReg[currentEditIndex], date: readValue('ledgerModDate'), scheme: scheme, prNo: prNo, acc: accRaw, phone: readValue('ledgerModPhone').trim(), cif: readValue('ledgerModCif').trim(), aadhaar: readValue('ledgerModAadhaar').replace(/[^0-9]/g, ''), pan: readValue('ledgerModPan').toUpperCase().replace(/[^A-Z0-9]/g, ''), name: name, relationName: readValue('ledgerModRelationName').trim(), village: readValue('ledgerModVillage').trim(), postOffice: readValue('ledgerModPostOffice').trim(), pincode, amt: Number(readValue('ledgerModAmount')), pbStatus: readValue('ledgerModPbStatus') || 'N/A', remarks: readValue('ledgerModRemarks').trim() };
     await localforage.setItem('accRegister', memAccReg); 
     closeLedgerEditModal(); renderRegTable(); renderDashboard(); showToast("✏️ Entry updated successfully.");
 }
@@ -3192,9 +3356,8 @@ function getDateRange(start, end) {
 }
 
 function getClosingBalanceForDate(dateStr) {
-    const opening = getOpeningBalance(dateStr);
-    const dayEntries = memCbData.filter(entry => entry.date === dateStr);
-    return dayEntries.reduce((bal, entry) => bal + (entry.type === 'receipt' ? Number(entry.amt) : -Number(entry.amt)), opening);
+    const index = getCashBalanceIndex();
+    return index.closingByDate.has(dateStr) ? index.closingByDate.get(dateStr) : getOpeningBalance(dateStr);
 }
 
 function getSchemeTargets() {
@@ -3460,7 +3623,9 @@ window.generateUnifiedMasterReport = async function() {
     }, {})).sort((a, b) => b.deposits - a.deposits);
     const passbookCounts = ['Pending AO', 'At BO', 'Delivered'].map(status => ({ status, count: ledger.filter(entry => entry.pbStatus === status).length }));
     const pendingPassbooks = passbookCounts[0].count;
-    const tdRows = tdEntries.map(entry => ({ ...entry, rate: INCENTIVE_RATES[String(entry.term)] || 0, incentive: Number(entry.incentive) || Math.round((Number(entry.deposit) || 0) * (INCENTIVE_RATES[String(entry.term)] || 0)) }));
+    const tdRows = tdEntries
+        .sort(compareTdBillEntries)
+        .map(entry => ({ ...entry, rate: INCENTIVE_RATES[String(entry.term)] || 0, incentive: Number(entry.incentive) || Math.round((Number(entry.deposit) || 0) * (INCENTIVE_RATES[String(entry.term)] || 0)) }));
     const tdDeposit = tdRows.reduce((sum, entry) => sum + (Number(entry.deposit) || 0), 0);
     const tdIncentive = tdRows.reduce((sum, entry) => sum + entry.incentive, 0);
     let runningBalance = memCbData.filter(entry => entry.date < start).reduce((sum, entry) => sum + (entry.type === 'receipt' ? Number(entry.amt) || 0 : -(Number(entry.amt) || 0)), 0);
@@ -3830,8 +3995,8 @@ window.deleteReminder = async function(id) {
 };
 
 window.exportDataBackup = async function() {
-  const backupKeys = ['appSettingsV5', 'accRegister', 'tdBillEntries', 'cashBookDataV2', 'tdBillBoName', 'tdBillBpmName', 'cashBookStatesV2', 'cashTallyHistory', 'tdBillHistory', 'tdBillSpo', 'tdBillHo', 'manualOverridesV5', 'branchHolidayDates', 'branchHolidayNames', 'auditTrailV1', 'recycleBinV1', 'customerRemindersV1', 'receiptHistoryV1', 'closingChecklistsV1'];
-  const dataToBackup = { version: 8, localForage: {}, localStorage: { schemeTargetsV1: localStorage.getItem('schemeTargetsV1'), lastMasterReportArchivedMonth: localStorage.getItem('lastMasterReportArchivedMonth') } };
+  const backupKeys = ['appSettingsV5', 'accRegister', 'tdBillEntries', 'cashBookDataV2', 'stampInventoryV1', 'tdBillBoName', 'tdBillBpmName', 'cashBookStatesV2', 'cashTallyHistory', 'tdBillHistory', 'tdBillSpo', 'tdBillHo', 'manualOverridesV5', 'branchHolidayDates', 'branchHolidayNames', 'auditTrailV1', 'recycleBinV1', 'customerRemindersV1', 'receiptHistoryV1', 'closingChecklistsV1'];
+  const dataToBackup = { version: 9, localForage: {}, localStorage: { schemeTargetsV1: localStorage.getItem('schemeTargetsV1'), lastMasterReportArchivedMonth: localStorage.getItem('lastMasterReportArchivedMonth') } };
   for (const key of backupKeys) dataToBackup.localForage[key] = await localforage.getItem(key);
   const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToBackup));
   const link = document.createElement('a'); link.setAttribute("href", dataStr); link.setAttribute("download", createExportFilename('Full_Data_Backup_V8', 'json')); document.body.appendChild(link); link.click(); link.remove();
@@ -3843,7 +4008,7 @@ window.importDataBackup = function(event) {
   reader.onload = async function(e) {
     try {
       const data = JSON.parse(e.target.result);
-      const allowedKeys = ['appSettingsV5', 'accRegister', 'tdBillEntries', 'cashBookDataV2', 'cashBookStatesV2', 'cashTallyHistory', 'tdBillHistory', 'tdBillBoName', 'tdBillBpmName', 'tdBillSpo', 'tdBillHo', 'manualOverridesV5', 'branchHolidayDates', 'branchHolidayNames', 'auditTrailV1', 'recycleBinV1', 'customerRemindersV1', 'receiptHistoryV1', 'closingChecklistsV1'];
+      const allowedKeys = ['appSettingsV5', 'accRegister', 'tdBillEntries', 'cashBookDataV2', 'stampInventoryV1', 'cashBookStatesV2', 'cashTallyHistory', 'tdBillHistory', 'tdBillBoName', 'tdBillBpmName', 'tdBillSpo', 'tdBillHo', 'manualOverridesV5', 'branchHolidayDates', 'branchHolidayNames', 'auditTrailV1', 'recycleBinV1', 'customerRemindersV1', 'receiptHistoryV1', 'closingChecklistsV1'];
       const savedData = data.localForage && typeof data.localForage === 'object' ? data.localForage : data;
       if (!savedData || typeof savedData !== 'object') throw new Error('Invalid backup format.');
       for (const key of allowedKeys) {
