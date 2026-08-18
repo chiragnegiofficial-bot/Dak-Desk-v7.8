@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dak Desk V8.1</title>
+<title>Dak Desk v8.5</title>
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800;900&display=swap">
 
 <!-- Dependencies -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
@@ -34,6 +35,28 @@
     <div class="modal-actions"><button class="btn btn-outline" onclick="closeOverrideModal()">Cancel</button><button class="btn btn-primary" id="override-save-btn" disabled onclick="saveOverride()">Force Override</button></div>
   </div>
 </div>
+
+<div id="inventoryModal" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:680px;">
+    <h3 class="modal-title">Inventory Menu — PS, RS & Postal Stationery</h3>
+    <p style="font-size:.875rem; color:var(--text-muted); margin-bottom:16px;">Record stock received or disposal with item-level quantity and value.</p>
+    <div class="form-row"><div class="input-group"><label>Action</label><select id="inventory-action"><option value="add">Receive / Add Stock</option><option value="disposal">Disposal / Write-off</option></select></div><div class="input-group"><label>Inventory Type</label><select id="inventory-category"><option>Postage Stamps</option><option>Revenue Stamps</option><option>Postal Stationery</option></select></div></div>
+    <div class="form-row"><div class="input-group"><label>Stamp denomination / stationery item</label><input id="inventory-item" list="inventory-item-options" type="text" placeholder="e.g. ₹5 stamp, ₹10 revenue stamp, envelope"></div><div class="input-group"><label>Quantity</label><input id="inventory-qty" type="number" min="1" step="1" placeholder="No. of units"></div><div class="input-group"><label>Unit value (₹)</label><input id="inventory-unit-value" type="number" min="0.01" step="0.01" placeholder="Value per unit"></div></div>
+    <div class="form-row"><div class="input-group"><label>Stock receipt / authority ref.</label><input id="inventory-reference" type="text" placeholder="Invoice, indent or order no."></div><div class="input-group"><label>Reason / remarks</label><input id="inventory-reason" type="text" placeholder="Received from AO, damaged, etc."></div></div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeInventoryModal()">Cancel</button><button class="btn btn-primary" onclick="saveInventoryMovement()">Save Movement</button></div>
+  </div>
+</div>
+
+<div id="stampSaleModal" class="modal-overlay" style="display:none;">
+  <div class="modal-content" style="max-width:560px;">
+    <h3 class="modal-title">Select Inventory for Stamp Sale</h3>
+    <p style="font-size:.875rem; color:var(--text-muted); margin-bottom:16px;">Cash receipt to post: <strong id="stamp-sale-amount">₹0.00</strong>. This value will be deducted from the selected inventory type.</p>
+    <div class="form-row"><div class="input-group"><label>Inventory Type</label><select id="stamp-sale-category"><option>Postage Stamps</option><option>Revenue Stamps</option><option>Postal Stationery</option></select></div><div class="input-group"><label>Stamp denomination / stationery item</label><input id="stamp-sale-item" list="inventory-item-options" type="text" placeholder="e.g. ₹5 stamp"></div><div class="input-group"><label>Quantity issued</label><input id="stamp-sale-qty" type="number" min="1" step="1" placeholder="Units"></div></div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeStampSaleModal()">Cancel</button><button class="btn btn-success" onclick="confirmStampSale()">Confirm Sale & Deduct Stock</button></div>
+  </div>
+</div>
+
+<datalist id="inventory-item-options"><option value="Legacy opening balance"><option value="₹1 stamp"><option value="₹2 stamp"><option value="₹5 stamp"><option value="₹10 stamp"><option value="₹20 stamp"><option value="₹25 stamp"><option value="₹50 stamp"><option value="Postcard"><option value="Inland letter"><option value="Envelope"></datalist>
 
 <div id="verifyCashModal" class="modal-overlay">
   <div class="modal-content">
@@ -124,6 +147,7 @@
     <div class="form-row"><div class="input-group"><label>Aadhaar</label><input type="text" id="ledgerModAadhaar" placeholder="12 Digits" maxlength="12" oninput="this.value = this.value.replace(/[^0-9]/g, '');"></div><div class="input-group"><label>PAN</label><input type="text" id="ledgerModPan" placeholder="10 Chars" maxlength="10" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');"></div></div>
     <div class="form-row"><div class="input-group" style="flex: 2;"><label>Customer Name</label><input type="text" id="ledgerModName"></div><div class="input-group"><label>Deposit Amount (₹)</label><input type="number" id="ledgerModAmount"></div></div>
     <div class="form-row"><div class="input-group" style="flex: 1;"><label>Father / Husband / Mother Name</label><input type="text" id="ledgerModRelationName" placeholder="Optional"></div></div>
+    <div style="margin: 4px 0 16px;"><label style="display:block; font-size:.8rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px;">Customer Address (Optional)</label><div class="form-row" style="margin-bottom:0;"><div class="input-group"><label>Village / Locality</label><input type="text" id="ledgerModVillage" placeholder="Village name"></div><div class="input-group"><label>Post Office</label><input type="text" id="ledgerModPostOffice" placeholder="Post office name"></div><div class="input-group"><label>PIN Code</label><input type="text" id="ledgerModPincode" placeholder="6 digits" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');"></div></div></div>
     <div class="form-row" style="margin-bottom: 0;"><div class="input-group" style="flex: 2;"><label>Remarks / Nominee</label><input type="text" id="ledgerModRemarks" placeholder="Optional"></div><div class="input-group" style="flex: 1;"><label>Passbook Status</label><select id="ledgerModPbStatus" style="font-weight: 600;"><option value="N/A">N/A</option><option value="Pending AO">Pending AO</option><option value="At BO">At BO</option><option value="Delivered">Delivered</option></select></div></div>
     <div style="display: flex; justify-content: flex-end; gap: 16px; margin-top: 24px;"><button class="btn btn-outline" onclick="closeLedgerEditModal()">Cancel</button><button class="btn btn-primary" onclick="saveEditedLedgerEntry()">Save Changes</button></div>
   </div>
@@ -168,19 +192,18 @@
 
 <aside class="sidebar" id="app-sidebar">
   <div class="brand-header">
-    <h1><i data-lucide="mail"></i> <span class="nav-text">Dak Desk</span></h1>
+    <h1><i data-lucide="mail"></i> <span class="nav-text">Dak Desk v8.5</span></h1>
     <p id="heroEyebrow" class="nav-text">My Branch Office</p>
   </div>
   <nav class="nav-menu">
     <button class="tab-btn active" onclick="switchTab('dashboard')" id="tab-dashboard" title="Branch Overview"><i data-lucide="layout-dashboard"></i> <span class="nav-text">Branch Overview</span></button>
-    <button class="tab-btn" onclick="switchTab('cashbook')" id="tab-cashbook" title="Treasury & BODA"><i data-lucide="book-open"></i> <span class="nav-text">Treasury & BODA</span></button>
-    <button class="tab-btn" onclick="switchTab('bill')" id="tab-bill" title="TD Incentive Billing"><i data-lucide="receipt"></i> <span class="nav-text">TD Incentive Billing</span></button>
-    <button class="tab-btn" onclick="switchTab('register')" id="tab-register" title="Customer Account Registry"><i data-lucide="users"></i> <span class="nav-text">Customer Account Registry</span></button>
-    <button class="tab-btn" onclick="switchTab('rates')" id="tab-rates" title="POSB Growth Planner"><i data-lucide="landmark"></i> <span class="nav-text">POSB Growth Planner</span></button>
-    <button class="tab-btn" onclick="switchTab('reports')" id="tab-reports" title="Insights Studio"><i data-lucide="bar-chart-3"></i> <span class="nav-text">Insights Studio</span></button>
+    <button class="tab-btn" onclick="switchTab('cashbook')" id="tab-cashbook" title="Treasury Operations"><i data-lucide="book-open"></i> <span class="nav-text">Treasury Operations</span></button>
+    <button class="tab-btn" onclick="switchTab('register')" id="tab-register" title="Accounts & TD Incentives"><i data-lucide="users"></i> <span class="nav-text">Accounts & TD Incentives</span></button>
+    <button class="tab-btn" onclick="switchTab('rates')" id="tab-rates" title="Scheme Tools"><i data-lucide="landmark"></i> <span class="nav-text">Scheme Tools</span></button>
+    <button class="tab-btn" onclick="switchTab('reports')" id="tab-reports" title="Reports & Analytics"><i data-lucide="bar-chart-3"></i> <span class="nav-text">Reports & Analytics</span></button>
   </nav>
   <div style="padding: 16px; border-top: 1px solid var(--border-sidebar);">
-    <button class="tab-btn" onclick="switchTab('settings')" id="tab-settings" title="Branch Settings & Backup"><i data-lucide="settings"></i> <span class="nav-text">Branch Settings & Backup</span></button>
+    <button class="tab-btn" onclick="switchTab('settings')" id="tab-settings" title="Settings & Utilities"><i data-lucide="settings"></i> <span class="nav-text">Settings & Utilities</span></button>
   </div>
 </aside>
 
@@ -362,17 +385,32 @@
               <input type="number" id="cb-treasury-cash" min="0" step="1" readonly title="Automatically synced from closing balance">
             </div>
             <div class="input-group">
-              <label>Postage Stamps (₹)</label>
-              <input type="number" id="cb-treasury-postage" min="0" step="1" oninput="updateTreasurySummary(); queueTreasurySave()">
+              <label>Postage Stamp Stock (₹)</label>
+              <div id="stamp-stock-closing" style="height:42px; display:flex; align-items:center; padding:0 12px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-input); font-weight:800; color:var(--brand-red);">₹0.00</div>
+              <small style="color:var(--text-muted); margin-top:5px;">Calculated from stock movements and stamp sales.</small>
             </div>
             <div class="input-group">
               <label>Revenue Stamps (₹)</label>
-              <input type="number" id="cb-treasury-revenue" min="0" step="1" oninput="updateTreasurySummary(); queueTreasurySave()">
+              <input type="number" id="cb-treasury-revenue" min="0" step="1" readonly title="Calculated from the inventory ledger">
             </div>
             <div class="input-group">
               <label>Postal Stationery (₹)</label>
-              <input type="number" id="cb-treasury-stationery" min="0" step="1" oninput="updateTreasurySummary(); queueTreasurySave()">
+              <input type="number" id="cb-treasury-stationery" min="0" step="1" readonly title="Calculated from the inventory ledger">
             </div>
+          </div>
+          <div id="stamp-inventory-controls" style="margin-top:14px; padding:14px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-input);">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:10px;"><strong style="font-size:.9rem;">Inventory Control: PS, RS & Postal Stationery</strong><span class="badge">Stock ledger</span></div>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <button class="btn btn-primary" type="button" onclick="openInventoryModal()"><i data-lucide="package-search"></i> Open Inventory Menu</button>
+              <button class="btn btn-outline text-danger" type="button" onclick="resetAllStampStock()"><i data-lucide="trash-2"></i> Reset All Stock to Zero</button>
+              <small style="color:var(--text-muted);">Choose PS, RS or postal stationery, then record item, quantity, value, reference and disposal if needed.</small>
+            </div>
+            <div class="form-row" style="margin:14px 0 6px; gap:12px;">
+              <div style="flex:1; font-size:.8rem; color:var(--text-muted);">Added today<br><strong id="stamp-stock-added" style="color:var(--success);">₹0.00</strong></div>
+              <div style="flex:1; font-size:.8rem; color:var(--text-muted);">Sold today<br><strong id="stamp-stock-sales" style="color:var(--danger);">₹0.00</strong></div>
+              <div style="flex:1; font-size:.8rem; color:var(--text-muted);">Disposed today<br><strong id="stamp-stock-disposed" style="color:var(--danger);">₹0.00</strong></div>
+            </div>
+            <div id="stamp-stock-log" style="margin-top:8px;"></div>
           </div>
           <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border:1px dashed var(--border); border-radius:var(--radius-md); background:var(--bg-input);">
             <span style="font-size:0.875rem; font-weight:600; color:var(--text-muted);">Combined Treasury Value</span>
@@ -467,6 +505,7 @@
 
     <!-- TD COMMISSION BILL -->
     <div class="tab-panel" id="tab-panel-bill">
+      <div class="no-print" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px;"><strong style="font-size:1.05rem;">Accounts &amp; TD Incentives</strong><div style="display:flex; flex-wrap:wrap; gap:8px;"><button class="btn btn-outline" onclick="switchTab('register')">Account Registry</button><button class="btn btn-primary" onclick="switchTab('bill')">TD Incentive Bill</button></div></div>
       <div class="stats-grid">
         <div class="stat-card" style="flex-direction: column; gap: 0;"><div class="stat-card-title">Total Entries</div><div class="stat-card-value" id="sum-entries">0</div></div>
         <div class="stat-card" style="border-color: var(--success); background: rgba(16, 185, 129, 0.02); flex-direction: column; gap: 0;"><div class="stat-card-title" style="color: var(--success);">Total Incentive</div><div class="stat-card-value" id="sum-incentive" style="color: var(--success);">₹0</div></div>
@@ -553,6 +592,7 @@
 
     <!-- SMART LEDGER -->
     <div class="tab-panel" id="tab-panel-register">
+      <div class="no-print" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px;"><strong style="font-size:1.05rem;">Accounts &amp; TD Incentives</strong><div style="display:flex; flex-wrap:wrap; gap:8px;"><button class="btn btn-primary" onclick="switchTab('register')">Account Registry</button><button class="btn btn-outline" onclick="switchTab('bill')">TD Incentive Bill</button></div></div>
       <div class="print-only"><h2>Branch Office Account Opening Register</h2><p style="color: #555;">Generated on: <span id="printDate"></span></p></div>
 
       <!-- DASHBOARD STATS -->
@@ -598,6 +638,15 @@
             <div class="input-group" style="flex: 1; min-width: 250px;">
               <label>Father / Husband / Mother Name</label>
               <input type="text" id="regRelationName" placeholder="Enter relation name" style="background: #fff;">
+            </div>
+          </div>
+
+          <div style="margin: 0 0 24px; padding:16px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--bg-input);">
+            <div style="font-size:.8rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:12px;">Customer Address <span style="font-weight:500; text-transform:none; letter-spacing:0;">(Optional)</span></div>
+            <div class="form-row" style="margin-bottom:0;">
+              <div class="input-group"><label>Village / Locality</label><input type="text" id="regVillage" placeholder="Enter village name" style="background:#fff;"></div>
+              <div class="input-group"><label>Post Office</label><input type="text" id="regPostOffice" placeholder="Enter post office name" style="background:#fff;"></div>
+              <div class="input-group" style="max-width:180px;"><label>PIN Code</label><input type="text" id="regPincode" placeholder="6 digits" maxlength="6" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');" style="background:#fff;"></div>
             </div>
           </div>
 
@@ -1162,7 +1211,7 @@
     <!-- SETTINGS -->
     <div class="tab-panel" id="tab-panel-settings">
       <div class="card">
-        <div class="card-header"><h2 class="card-title"><i data-lucide="settings"></i> Branch Settings & Data Backup</h2></div>
+        <div class="card-header"><h2 class="card-title"><i data-lucide="settings"></i> Settings & Utilities</h2></div>
         <div class="split-layout">
           <div style="border:1px solid var(--border); border-radius:var(--radius-md); padding:20px;">
             <h3 style="font-size:1rem; font-weight:700; margin-bottom:8px;">Branch Profile</h3>
